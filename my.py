@@ -1,14 +1,9 @@
 import mariadb
 # from mysql.connector import FieldType
 import pprint
+import passwd
 
-dsn = {
-    'user': 'admin',
-    'password': 'pass',
-    # 'host': '127.0.0.1',
-    # 'port': 3306,
-    'database': 'test',
-}
+# python /AppData/Code/py/my.py
 
 fieldType = {
     0: 'DECIMAL',  # DECIMAL
@@ -40,65 +35,10 @@ fieldType = {
     254: 'GEOMETRY',  # GEOMETRY
 }
 # *IS CURRENTLY MAPPED TO ALL TEXT AND BLOB TYPES (MYSQL 5.0.51A)
-aTypes = {
-    'TINY': 'TINYINT',
-    'SHORT': 'SMALLINT',
-    'INT24': 'MEDIUMINT',
-    'LONG': 'INT',
-    'LONGLONG': 'BIGINT',
-    'NEWDECIMAL': 'DECIMAL',
-    'FLOAT': 'FLOAT',
-    'DOUBLE': 'DOUBLE',
-    'BIT': 'BIT',
-    'STRING': 'BINARY',
-    'STRING': 'ENUM',
-    'STRING': 'SET',
-    'STRING': 'CHAR',
-    'BLOB': 'JSON',
-    'BLOB': 'BLOB',
-    'BLOB': 'MEDIUMBLOB',
-    'BLOB': 'MEDIUMTEXT',
-    'BLOB': 'LONGBLOB',
-    'BLOB': 'LONGTEXT',
-    'BLOB': 'TEXT',
-    'BLOB': 'TINYBLOB',
-    'BLOB': 'TINYTEXT',
-    'VAR_STRING': 'VARBINARY',
-    'VAR_STRING': 'VARCHAR',
-    'DATE': 'DATE',
-    'TIME': 'TIME',
-    'DATETIME': 'DATETIME',
-    'TIMESTAMP': 'TIMESTAMP',
-    'YEAR': 'YEAR',
-    'NEWDATE': 'NEWDATE',
-    'GEOMETRY': 'POINT',
-    'GEOMETRY': 'LINESTRING',
-    'GEOMETRY': 'POLYGON',
-    'GEOMETRY': 'MULTIPOINT',
-    'GEOMETRY': 'MULTILINESTRING',
-    'GEOMETRY': 'MULTIPOLYGON',
-    'GEOMETRY': 'GEOMETRYCOLLECTION',
-    'GEOMETRY': 'GEOMETRY',
-}
-
-
-def static_vars(**kwargs):
-
-    def decorate(func):
-        for k in kwargs:
-            setattr(func, k, kwargs[k])
-        return func
-
-    return decorate
-
-
-@static_vars(counter=0)
 def myType(tp):
     nType = tp[1]
     tam = 0
     bits = 0
-    print(myType.counter)
-    myType.counter+=1
     flags = tp[7]
     mydict = {
         # 'bin_' + tp[0]: f'{bin(flags)[2:]:0>32}',
@@ -208,7 +148,7 @@ def myType(tp):
 
 
 try:
-    conn = mariadb.connect(**dsn)
+    conn = mariadb.connect(**passwd.dsn['evoice'])
 except mariadb.Error as e:
     print(f"Error connecting to MariaDB Platform: {e}")
     # sys.exit(1)
@@ -223,4 +163,4 @@ mydict = {
 }
 
 pp = pprint.PrettyPrinter(indent=2)
-# pp.pprint(mydict)
+pp.pprint(mydict)
