@@ -45,9 +45,10 @@ while True:
         pyautogui.moveTo(x, y, sec, getattr(pyautogui, tp))
     except KeyboardInterrupt:
         print('Interrompido')
-        pyautogui.keyUp('ctrl')
-        pyautogui.keyUp('shift')
-        pyautogui.keyUp('alt')
+        for key in tk:
+            if k[key]: 
+                print('Down '+key) 
+                pyautogui.keyUp(key)
         quit()
     except Exception as e:
         print(e)
