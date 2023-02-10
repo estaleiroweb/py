@@ -1,7 +1,6 @@
 # Classes/Objects
 
 # Magic Methods
-
 print([
     '\N{GREEK CAPITAL LETTER DELTA}',  # Using the character name
     '\u0394',  # Using a 16-bit hex value
