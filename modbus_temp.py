@@ -12,7 +12,7 @@ addrs = {
     'TemperatureRaw': [1, 4],
     'HumidyRaw': [2, 4],
 }
-emb.Conn.defSlave[1] = addrs
+emb.Conn.defSlave(1, addrs)
 
 # Read MIB of any slave of the connection
 print('TCP MIB Slave 1', tcp.slave(1)(), sep=':')
