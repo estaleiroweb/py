@@ -1,5 +1,18 @@
 import emodbus as emb
 
+def main_process(callback):
+    print("Main process started.")
+    print("Doing some tasks.")
+    result = "Task completed."
+    callback(result)  # Call the callback function with the result
+    print("Main process finished.")
+
+def my_callback_function(message):
+    print(f"Inside the callback: {message}")
+
+# main_process(my_callback_function)
+# print(str(type(my_callback_function))=="<class 'function'>")
+
 # connect to bus of devices
 tcp = emb.ConnTCP('192.168.1.45')
 rtu = emb.ConnRTU('/dev/ttyUSB0') # linux
@@ -34,15 +47,15 @@ mib = {  # Management Information Bases
 }
 
 # Define default MIB to slave
-# emb.Conn.defSlave(1, mib)
+emb.Conn.defSlave(1, mib)
 
 # # Read MIB of any slave of the connection
-# print('TCP MIB Slave 1', tcp.slave(1)(), sep=':')
-# print()
+print('TCP MIB Slave 1', tcp.slave(1)(), sep=':')
+print()
 
 # define MIB of connection/slave
-tcp.slave(1, mib)
-rtu.slave(1, mib)
+# tcp.slave(1, mib)
+# rtu.slave(1, mib)
 
 # read all MIB
 # slaves = list(range(11,16))+list(range(31,37))
@@ -59,7 +72,7 @@ for slave in slaves:
     print('Read Slave '+str(slave), addr, sep=':')
     r=tcp.read(slave, addr)
     print('TCP', r, sep=':')
-    print(str(r['Temperature'].format).format(r['Temperature'].value))
+    print(r['Temperature'])
     print('RTU', rtu.read(slave, addr), sep=':')
 
 # Demostration
