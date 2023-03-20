@@ -1,0 +1,128 @@
+# This workflow will upload a Python Package using Twine when a release is created
+# For more information see: https://help.github.com/en/actions/language-and-framework-guides/using-python-with-github-actions#publishing-to-package-registries
+
+name: Upload Python Package
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main,master]
+  # pull_request:
+  #   branches:
+  #     - "*"
+# env:
+#   PROJECT_NAME: magic-methods
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel twine tqdm
+      - name: Build and publish
+        env:
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python setup.py sdist bdist_wheel
+          twine upload dist/*
+
+# jobs:
+  # build:
+    # runs-on: ubuntu-latest
+    # strategy:
+      # matrix:
+        # python-version: [3.8, 3.9, "3.10", "3.11"]
+
+    # steps:
+      # - uses: actions/checkout@v1
+        # with:
+          # fetch-depth: 9
+          # submodules: false
+
+      # - name: Use Python ${{ matrix.python-version }}
+        # uses: actions/setup-python@v4
+        # with:
+          # python-version: ${{ matrix.python-version }}
+
+      # - uses: actions/cache@v1
+        # id: depcache
+        # with:
+          # path: deps
+          # key: requirements-pip-${{ matrix.python-version }}-${{ hashFiles('requirements.txt') }}
+
+      # - name: Download dependencies
+        # if: steps.depcache.outputs.cache-hit != 'true'
+        # run: |
+        #   pip download --dest=deps -r requirements.txt
+
+      # - name: Install dependencies
+        # run: |
+        #   pip install -U --no-index --find-links=deps deps/*
+
+      # - name: Run tests
+        # run: |
+        #   pytest --doctest-modules --junitxml=junit/pytest-results-${{ matrix.python-version }}.xml --cov=$PROJECT_NAME --cov-report=xml tests/
+
+      # - name: Run linters
+        # run: |
+        #   echo "Running linters"
+
+        #   flake8 .
+        #   isort --check-only . 2>&1
+        #   black --check . 2>&1
+
+      # - name: Upload pytest test results
+        # uses: actions/upload-artifact@master
+        # with:
+          # name: pytest-results-${{ matrix.python-version }}
+          # path: junit/pytest-results-${{ matrix.python-version }}.xml
+        # if: always()
+
+      # - name: Codecov
+        # run: |
+        #   bash <(curl -s https://codecov.io/bash)
+
+      # - name: Install distribution dependencies
+        # run: pip install --upgrade twine setuptools wheel
+        # if: matrix.python-version == 3.10
+
+      # - name: Create distribution package
+        # run: python setup.py sdist bdist_wheel
+        # if: matrix.python-version == 3.10
+
+      # - name: Upload distribution package
+        # uses: actions/upload-artifact@master
+        # with:
+          # name: dist-package-${{ matrix.python-version }}
+          # path: dist
+        # if: matrix.python-version == 3.10
+
+  # publish:
+    # runs-on: ubuntu-latest
+    # needs: [build]
+    # if: github.event_name == 'release'
+    # steps:
+      # - name: Download a distribution artifact
+        # uses: actions/download-artifact@v2
+        # with:
+          # name: dist-package-3.10
+          # path: dist
+      # - name: Publish distribution 📦 to Test PyPI
+        # uses: pypa/gh-action-pypi-publish@master
+        # with:
+          # skip_existing: true
+          # user: __token__
+          # password: ${{ secrets.PYPI_PASSWORD }}
+          # repository_url: https://test.pypi.org/legacy/
+      # - name: Publish distribution 📦 to PyPI
+        # uses: pypa/gh-action-pypi-publish@master
+        # with:
+          # user: __token__
+          # password: ${{ secrets.PYPI_PASSWORD }}
