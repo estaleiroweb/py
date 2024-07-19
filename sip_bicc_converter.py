@@ -1,6 +1,6 @@
 import re
 # Abrindo um arquivo em modo de leitura ('r')
-nome_arquivo = 'C:\\AppData\\Code\\py\\SIP_BICC.txt'
+nome_arquivo = 'C:\\AppData\\Code\\py\\sip_bicc.txt'
 conteudo=None
 
 try:
