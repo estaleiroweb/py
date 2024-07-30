@@ -10,7 +10,7 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 Ha HaHa
 
 MetaCharacters (Need to be escaped):
-. ^ $ * + ? { } [ ] \ | ( )
+. ^ $ * + ? { } [ ] \\ | ( )
 
 coreyms.com
 
