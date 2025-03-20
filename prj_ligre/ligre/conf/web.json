@@ -1,0 +1,40 @@
+{
+	"cookie": {
+		"name": "project",
+		"age": null,
+		"domain": null,
+		"path": "/",
+		"secure": false,
+		"httponly": false,
+		"samesite": null
+	},
+	"webserver": {
+		":443": {
+			"bind": "",
+			"port": 443,
+			"https": true,
+			"keyfile": "/cer/key.pem",
+			"certfile": "/cer/cert.pem",
+			"router": ".roter.main"
+		},
+		":80": {
+			"bind": "",
+			"port": 80,
+			"redirect": ":443"
+		}
+	},
+	"log": {
+		"error": {},
+		"info": {
+			"format": "",
+			"type": []
+		}
+	},
+	"file_upload": {
+		"max_memory_size": 2621440,
+		"temp_dir": null,
+		"permissions": 644,
+		"directory_permissions": null
+	},
+	"tr_url": []
+}

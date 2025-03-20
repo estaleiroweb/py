@@ -1,0 +1,17 @@
+{
+	"from": {
+		"name": "localhost",
+		"address": "root@localhost"
+	},
+	"smtp": {
+		"server": "smtp.localhost.com.br",
+		"port": 25,
+		"user": null,
+		"password": null,
+		"use_tls": false,
+		"use_ssl": false,
+		"ssl_certfile": null,
+		"ssl_keyfile": null,
+		"timeout": null
+	}
+}

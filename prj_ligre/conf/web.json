@@ -1,0 +1,35 @@
+{
+	"webserver": {
+		":443": {
+			"bind": "",
+			"port": 443,
+			"https": true,
+			"keyfile": "/cer/key.pem",
+			"certfile": "/cer/cert.pem",
+			"router": ".roter.main"
+		},
+		":80": {
+			"bind": "",
+			"port": 80,
+			"redirect": ":443"
+		}
+	},
+	"log": {
+		"error": {},
+		"info": {
+			"format": "",
+			"type": [
+				"file://path/filename",
+				"ssh://server/path/filename",
+				"nc://server/path/filename",
+				"conn://dsn/db/table"
+			]
+		}
+	},
+	"tr_url": [
+		[
+			"https?://[^/]+?/?",
+			"/"
+		]
+	]
+}
