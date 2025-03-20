@@ -1,82 +1,127 @@
 import re
 import csv
 import mysql.connector
+from abc import ABC, abstractmethod
 from io import StringIO
 from mysql.connector import Error, errorcode, MySQLConnection, CMySQLConnection
 from typing import List, Tuple, Dict, Any, Iterator
-# from bkpcore.db_config import mysql_conn  # type: ignore
-# fmt: off
-import Dsn  # type: ignore
-# fmt: on
+# from ..secure.dsn import Dsn
+from ..core import fn
 
 
-def connect(dsn: str, db: str = None) -> 'Conn_MySQL|None':
-    if dsn in Dsn.conf:
-        arr = Dsn.conf[dsn]
-        if 'type' not in arr:
-            return Conn_MySQL(arr, db)
-        t = arr['type'].lower()
+def connect(dsn: 'str|dict', db: str = None) -> 'MySQL|MariaDB|None':
+    arr = fn.dsn(dsn)
+    if arr:
+        if 'scheme' not in arr:
+            return MySQL(arr, db)
+        t = arr['scheme'].lower()
         if t == 'mysql':
-            return Conn_MySQL(arr, db)
+            return MySQL(arr, db)
         elif t == 'mariadb':
-            return Conn_MySQL(arr, db)
+            return MariaDB(arr, db)
 
 
-class Conn_MySQL:
-    def __init__(self, dsn: 'str|Dict', db: str = None) -> None:
-        self.verbose = False
-        self.db = db
+class Main(ABC):
+    default = {
+    }
+
+    def __init__(self, dsn: 'str|dict', db: str = None) -> None:
+        cfg = fn.dsn(dsn)
+        if not cfg:
+            self.fatal_error('Dada connection config required')
+        self._checkConfig(cfg)
+
+        self.verbose: bool = False
         self.error = None
-        self.conn = None
+        self.__dsn: dict = fn.anonymize(cfg)
+        self.__conn: 'MySQL|MariaDB' = self.connect(cfg)
 
-        if not dsn:
-            print('Requerido DSN')
-            quit()
-        conf = self.dsn(dsn) if type(dsn) == str else self.checkConf(dsn)
-
-        if not conf:
-            print('DSN inexistente')
-            quit()
-        if db:
-            conf['database'] = db
-
-        self.conn = self.connect(conf)
+        self.db = db
 
     def __del__(self):
         self.close()
 
-    def dsn(self, dsn: str) -> dict:
-        if dsn not in Dsn.conf:
-            return {}
-        return self.checkConf(Dsn.conf[dsn])
+    @property
+    def dsn(self) -> dict:
+        return self.__dsn
 
-    def checkConf(self, conf) -> dict:
-        default = {
-            "host": "localhost",
-            "user": None,
-            "password": None,
-            "database": None,
-            "port": 3306,
-            "unix_socket": None,
-            "auth_plugin": None,
-            "charset": "utf8",
-            "collation": None,
-            "buffered": False,
-            "raise_on_warnings": True,
-            "use_pure": True,
-            "connection_timeout": None,
-            "use_unicode": True,
-            "ssl_ca": None,
-            "ssl_cert": None,
-            "ssl_key": None
-        }
-        out = {}
-        for k, v in default.items():
-            if k in conf:
-                out[k] = conf.get(k, v)
-            elif v != None:
-                out[k] = v
-        return out
+    @property
+    def conn(self) -> 'MySQL|MariaDB':
+        return self.__conn
+
+    @property
+    def db(self):
+        """Database selected"""
+        return self.__db
+
+    @db.setter
+    def db(self, db):
+        if db and db != self.__db and self.select_db(db):
+            self.__db = db
+
+    @abstractmethod
+    def _checkConfig(self, cfg: dict):
+        ...
+
+    @abstractmethod
+    def connect(self, config):
+        ...
+
+    @abstractmethod
+    def select_db(self, db):
+        ...
+
+    @abstractmethod
+    def close(self):
+        ...
+
+    def fatal_error(self, text):
+        print(text)
+        quit()
+
+    def show(self, content):
+        if self.verbose:
+            print(content)
+
+    def showSQL(self, sql: str, param: 'tuple|list|dict' = []):
+        if self.verbose:
+            lenTitle = 80
+            print('Start Query'.center(lenTitle, '-'))
+            print(self.joinParam(sql, param))
+            print('End Query'.center(lenTitle, '-'))
+            print()
+            # self.showSQL('\n   -- parameters')
+            # self.showSQL(param)
+
+
+class MySQL(Main):
+    default = {
+        'host': 'localhost',
+        'user': None,
+        'password': None,
+        'database': None,
+        'port': 3306,
+        'query': {
+            'unix_socket': None,
+            'auth_plugin': None,
+            'charset': "utf8",
+            'collation': None,
+            'buffered': False,
+            'raise_on_warnings': True,
+            'use_pure': True,
+            'connection_timeout': None,
+            'use_unicode': True,
+            'ssl_ca': None,
+            'ssl_cert': None,
+            'ssl_key': None,
+        },
+        'params': None,
+        'fragment': None,
+    }
+
+    def _checkConfig(self, cfg: dict):
+        if 'host' not in cfg:
+            self.fatal_error('Host connection config required')
 
     def connect(self, config) -> 'CMySQLConnection|MySQLConnection|None':
         """
@@ -84,48 +129,62 @@ class Conn_MySQL:
         """
         try:
             return mysql.connector.connect(**config)  # type: ignore
-        except Error as err:
-            self.error = err
-            if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
-                print("Something is wrong with your user name or password")
-            elif err.errno == errorcode.ER_BAD_DB_ERROR:
-                print("Database does not exist")
+        except Error as e:
+            self.error = e
+            if e.errno == errorcode.ER_ACCESS_DENIED_ERROR:
+                self.show("Something is wrong with your user name or password")
+            elif e.errno == errorcode.ER_BAD_DB_ERROR:
+                self.show("Database does not exist")
             else:
-                print("Erro: ", err)
+                self.show(f"Erro: {e}")
             return None
 
-    def close(self) -> 'Conn_MySQL':
+    def select_db(self, db: str) -> bool:
+        out = False
+        if self.conn:
+            cursor = self.conn.cursor()
+            try:
+                cursor.execute(f"USE {db}")
+                self.conn.database = db
+                out = True
+            except mysql.connector.Error as e:
+                self.error = e
+                self.show(f"Erro ao executar a inserção: {e}")
+            finally:
+                cursor.close()
+        return out
+
+    def close(self):
         if self.conn:
             self.conn.close()
             self.conn = None
-        return self
 
-    def query(self, sql: str, param: 'Tuple|List|Dict' = []) -> Iterator[Tuple]:
+    def query(self, sql: str, param: 'tuple|list|dict' = []) -> Iterator[tuple]:
         """
         Executa uma consulta SQL na base de dados e retorna um iterador sobre os resultados.
 
         Esta função executa uma consulta SQL fornecida com parâmetros opcionais e retorna um iterador que 
         permite iterar sobre as linhas do resultado da consulta. 
 
-        Parâmetros:
-        - sql (str): A string contendo a consulta SQL a ser executada.
-        - param (Tuple|List|Dict, opcional): Parâmetros a serem passados para a consulta SQL. Pode ser uma tupla, lista ou dicionário.
+        Args:
+            sql (str): A string contendo a consulta SQL a ser executada.
+            param (tuple|list|dict, opcional): Parâmetros a serem passados para a consulta SQL. Pode ser uma tupla, lista ou dicionário.
 
-        Retorna:
-        - Iterator[Tuple]: Um iterador que gera tuplas representando as linhas do resultado da consulta.
+        Returns:
+            Iterator[tuple]: Um iterador que gera tuplas representando as linhas do resultado da consulta.
 
-        Comportamento:
+        ## Behavor:
         1. Se o modo verbose está ativado, imprime o início e o fim da execução da consulta, bem como o SQL formatado.
         2. Cria um cursor para a conexão com a base de dados.
         3. Executa a consulta SQL com os parâmetros fornecidos.
         4. Itera sobre as linhas retornadas pelo cursor e as gera como tuplas.
         5. Fecha o cursor após a iteração sobre todas as linhas.
 
-        Exemplo de uso:
+        **Exemplo de uso**:
         - Suponha que `sql` seja `'SELECT * FROM users WHERE age > %s'` e `param` seja `(30,)`. 
         A função executará a consulta e retornará um iterador que gera todas as linhas da tabela `users` onde a idade é maior que 30.
 
-        Nota:
+        ## Note:
         - O cursor é configurado para retornar dicionários (com `dictionary=True`), o que permite acessar os valores das colunas pelo nome.
         - A função usa `yield` para retornar linhas uma por uma, permitindo um processamento eficiente de grandes conjuntos de dados.
 
@@ -444,16 +503,6 @@ class Conn_MySQL:
 
         return [row for row in reader]
 
-    def show(self, content):
-        if self.verbose:
-            print(content)
 
-    def showSQL(self, sql: str, param: 'Tuple|List|Dict' = []):
-        if self.verbose:
-            lenTitle = 80
-            print('Start Query'.center(lenTitle, '-'))
-            print(self.joinParam(sql, param))
-            print('End Query'.center(lenTitle, '-'))
-            print()
-            # self.showSQL('\n   -- parameters')
-            # self.showSQL(param)
+class MariaDB(MySQL):
+    ...

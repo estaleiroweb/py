@@ -1,0 +1,12 @@
+{
+	"ZBHE04":{
+		"host":"10.210.17.51",
+		"user":"SNGN001",
+		"passwd": "P!ruL1t3"
+	},
+	"SDVBHE04":{
+		"host":"10.46.168.5",
+		"user":"ipmp",
+		"passwd": "ngnInv%2018"
+	}
+}

@@ -1,10 +1,55 @@
 {
-	"Idx 1": {
-		"v1": "c",
-		"v2": "d"
+	"core_db1": {
+		"scheme": "mysql",
+		"host": "10.216.127.34",
+		"user": "hoteosadb",
+		"password": "hoteosOSS19",
+		"database": "acionamento"
 	},
-	"Contexto 2": {
-		"v1": "x",
-		"v2": "y"
+	"evoice": {
+		"scheme": "mariadb",
+		"host": "10.192.72.10",
+		"user": "admin",
+		"password": "sup3R73$te",
+		"database": "test"
+	},
+	"evoice_db1": {
+		"scheme": "mariadb",
+		"host": "10.221.23.26",
+		"user": "admin",
+		"password": "sup3R73$te",
+		"database": "test"
+	},
+	"evoice_db2": {
+		"scheme": "mariadb",
+		"host": "10.221.23.27",
+		"user": "admin",
+		"password": "sup3R73$te",
+		"database": "test"
+	},
+	"evoice_db3": {
+		"scheme": "mariadb",
+		"host": "10.221.23.28",
+		"user": "admin",
+		"password": "sup3R73$te",
+		"database": "test"
+	},
+	"evoice_db4": {
+		"scheme": "mariadb",
+		"host": "10.221.23.30",
+		"user": "admin",
+		"password": "sup3R73$te",
+		"database": "test"
+	},
+	"doc": {
+		"scheme": "mysql,mariadb",
+		"host": "ip,hostname",
+		"port": "int,null",
+		"user": "str,null",
+		"password": "str,null",
+		"database": "str,null",
+		"query": {},
+		"params": "str,null",
+		"fragment": "str,null"
 	}
 }

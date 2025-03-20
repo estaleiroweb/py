@@ -3,6 +3,7 @@ import json
 import sys
 import configparser
 import jsonpath_ng as j
+# from typing import Union
 from .fn import merge_recursive
 
 
@@ -14,8 +15,11 @@ class Conf:
     using JSONPath. Also supports loading INI files.
     """
 
-    path: list = []
-    """List of directories where configuration files are searched."""
+    subdir = 'conf'
+    """Subfolder that has configurations"""
+
+    path: 'dict[str,list[str]]' = {}
+    """Collection of list of directories where configuration files are searched."""
 
     cache: dict = {}
     """Cache to store already loaded configurations."""
@@ -23,33 +27,7 @@ class Conf:
     debug: bool = False
     """Flag to enable debug message display."""
 
-    def __new__(cls, *args, encoding: str = "utf-8", returnDict: bool = False) -> 'dict[str,Conf]|list[Conf]|Conf|None':
-        """
-        Creates a new instance or list of instances of the Conf class.
-
-        Args:
-            *args: Configuration file names to load.
-            encoding: Configuration file encoding.
-            returnDict: If True, returns a dictionary of instances instead of a list.
-
-        Returns:
-            A Conf instance, a list of Conf instances, a dictionary of Conf instances, or None.
-        """
-        op = os.path
-        if not cls.path:
-            cls.path = [
-                op.realpath(op.join(op.dirname(__file__), '..', 'conf')),
-                op.realpath(op.join(sys.path[0], 'conf')),
-            ]
-        if len(args) > 1:
-            if returnDict:
-                return {file: cls(file, encoding=encoding) for file in args}
-            else:
-                return [cls(file, encoding=encoding) for file in args]
-        else:
-            return super().__new__(cls)
-
-    def __init__(self, file: str, *, encoding: str = "utf-8"):
+    def __init__(self, file: str, encoding: str = "utf-8", merge: bool = False):
         """
         Initializes a Conf class instance.
 
@@ -57,16 +35,25 @@ class Conf:
             file: Configuration file name to load.
             encoding: Configuration file encoding.
         """
+        if Conf.subdir not in Conf.path:
+            Conf.path[Conf.subdir] = []
+            Conf.__checkDir(sys.path[0])
+            d, dOld = __file__, ''
+            while d and d != dOld:
+                dOld, d = d, os.path.dirname(d)
+                Conf.__checkDir(d)
+
+        self.__subdir: str = self.subdir
         self.__dir: list = []
         self.__file: str = file
         self.__encoding: str = encoding
-        self.__load()
+        self.__load(merge)
 
     def __str__(self) -> str:
         """Returns the configuration file name."""
         return self.__file
 
-    def __call__(self, jsonPath: str = None) -> dict | list | str | int | float | bool | None:
+    def __call__(self, jsonPath: str = None) -> 'dict|list|str|int|float|bool|None':
         """
         Accesses configuration values using JSONPath.
 
@@ -76,12 +63,18 @@ class Conf:
         Returns:
             The found value(s), or the entire configuration dictionary if jsonPath is None.
         """
-        conf = Conf.cache[self.__file]['conf']
+        conf = Conf.cache[self.key]['conf']
         if jsonPath is not None:
             jsonpath_expr = j.parse(jsonPath)
             out = [match.value for match in jsonpath_expr.find(conf)]
             return out[0] if len(out) == 1 else out
         return conf
+
+    @classmethod
+    def __checkDir(cls, dir: str):
+        dir = os.path.join(dir, cls.subdir)
+        if os.path.isdir(dir):
+            cls.path[cls.subdir].append(os.path.realpath(dir))
 
     @property
     def dir(self) -> list:
@@ -98,20 +91,21 @@ class Conf:
         """Configuration file encoding."""
         return self.__encoding
 
-    def __load(self):
+    def __load(self, merge: bool = False):
         """Loads the configuration file (JSON or INI) and stores it in cache."""
-        if self.__file not in Conf.cache:
-            Conf.cache[self.__file] = {
-                'dir': [],
-                'conf': None,
-            }
-        self.__dir = []
-        for dir in self.path:
+        key = self.key
+        if key in Conf.cache:
+            return
+        Conf.cache[key] = {
+            'dir': [],
+            'conf': None,
+        }
+        for dir in self.path[self.subdir]:
             fullfile = os.path.join(dir, self.__file)
             if not os.path.isfile(fullfile):
                 continue
             self.__show(f'Conf Load {fullfile}')
-            self.__dir.append(dir)
+            Conf.cache[key]['dir'].append(dir)
             conf = None
             if self.__file.endswith('.json'):
                 with open(fullfile, "r", encoding=self.__encoding) as f:
@@ -124,12 +118,21 @@ class Conf:
                 }
             else:
                 continue
-            Conf.cache[self.__file]['conf'] = merge_recursive(
-                Conf.cache[self.__file]['conf'],
-                conf
-            )
-        Conf.cache[self.__file]['dir'] = self.__dir
-        self.__dir = Conf.cache[self.__file]['dir']
+            if merge:
+                Conf.cache[key]['conf'] = merge_recursive(
+                    Conf.cache[key]['conf'],
+                    conf
+                )
+            else:
+                Conf.cache[key]['conf'] = conf
+                break
+        self.__dir = Conf.cache[key]['dir']
+
+    @property
+    def key(self):
+        """Key of cache"""
+        return self.__file
+        return f'{self.__subdir}/{self.__file}'
 
     def __show(self, text):
         """Displays debug messages if debug mode is enabled."""

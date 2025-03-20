@@ -1,18 +1,19 @@
-#!/bin/python3
+import sys
+import os
+
+# py /preventive/bin/py/prj_ligre/ligre/_see/tests/test_extract.py
 
 # fmt: off
-import sys
-sys.path.append('/preventive/bin')
+import add_path
+add_path.up('ligre')
 import ligre.core.expect as ex
+from ligre.core.conf import Conf
 # fmt: on
 
 
 def test():
-    if False:
-        # SR/SBC
-        host = '10.46.168.5'
-        user = 'ipmp'
-        passwd = 'ngnInv%2018'
+    key = 'ZBHE04'
+    if key == 'SDVBHE04':
         cmdsDict = {
             'version': 'show version',
             'image': 'show version image',
@@ -20,28 +21,32 @@ def test():
             'exit1': 'exit',
             'exit2': 'exit',
         }
-    else:
-        # ZBHE04
-        host = '10.210.17.51'
-        user = 'SNGN001'
-        passwd = 'P!ruL1t3'
+    elif key == 'ZBHE04':
         cmdsDict = {
             'mml': 'mml',
-            # 'ioexp': 'ioexp;',
-            # 'exit1': 'exit;',
-            # 'exit2': 'exit',
+            'ioexp': 'ioexp;',
+            'exit1': 'exit;',
+            'exit2': 'exit',
         }
+    else:
+        return
+
+    cfg = Conf('devices.json')
+    cfg = cfg()
+    if not isinstance(cfg, dict) or key not in cfg:
+        return
+
     # ex.SSH.verbose = True
-    # ex.SSH.verbose = ex.DEBUG_ALL
+    ex.SSH.verbose = ex.DEBUG_ALL
     # ex.ret_dict = False
-    o = ex.SSH(host, user, passwd)
-    # ret = o(cmdsDict)
+    o = ex.SSH(cfg['host'], cfg['user'], cfg['passwd'])
+    ret = o(cmdsDict)
     # ret = o(list(cmdsDict.values()))
 
     # o.interactive()
     # print('-'*100)
     # print(o.buffer)
-    ret = o(['mml','ioexp;', 'exit;', 'exit',])
+    # ret = o(['mml','ioexp;', 'exit;', 'exit',])
 
     print('### Welcome:', o.welcome, sep='\n')
     o.show(ret)
