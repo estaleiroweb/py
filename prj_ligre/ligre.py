@@ -34,7 +34,7 @@ d2 = {
 # print(d1 | d2)
 # print(fn.merge_recursive(d1, d2))
 c=Conf('settings.json')
-print(c('$.formats'))
+# print(c('$.formats'))
 quit()
 
 # Conf('dsn.json')
