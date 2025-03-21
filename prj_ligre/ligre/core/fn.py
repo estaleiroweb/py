@@ -36,47 +36,91 @@ def dsn(dsn: 'str|dict') -> dict:
             'pass': 'password',
         }
         cfg = {k.lower(): v for k, v in cfg.items()}
-        for i in arr:
-            if i in cfg and arr[i] not in cfg:
-                cfg[arr[i]] = cfg[i]
-                del (arr[i])
-        return cfg
+        return trDict(cfg, arr)
 
     def makeDSN(cfg: dict) -> str:
-        strDsn = f'{cfg['scheme']}://' if cfg['scheme'] else ''
-        strDsn += f'{cfg['username']}@' if cfg['username'] else ''
-        port = f':{cfg['port']}' if cfg['port'] else ''
-        strDsn += f'{cfg['hostname']}{port}' if cfg['hostname'] else ''
-        strDsn += cfg['path'] if cfg['path'] else ''
+        c = cfg.copy()
+        arr = ['scheme', 'username', 'port', 'hostname', 'path',]
+        for i in arr:
+            if i not in c:
+                c[i] = ''
+        strDsn = f'{c['scheme']}://' if c['scheme'] else ''
+        strDsn += f'{c['username']}@' if c['username'] else ''
+        port = f':{c['port']}' if c['port'] else ''
+        strDsn += f'{c['hostname']}{port}' if c['hostname'] else ''
+        strDsn += c['path'] if c['path'] else ''
         return strDsn
 
     if isinstance(dsn, str):
-        if '://' in dsn:
+        if '://' in dsn: # URI
             from urllib.parse import urlparse, parse_qs
             u = urlparse(dsn)
-            cfg = {
-                'scheme': u.scheme,
-                'host': u.hostname,
-                'port': u.port,
-                'user': u.username,
-                'password': u.password,
-                'database': u.path.replace('/', '.').strip('.'),
-                'query': simplify_lists(parse_qs(u.query)),
-                'params': u.params,
-                'fragment': u.fragment,
-            }
+            arr = [
+                'scheme', 'host', 'port',
+                'user', 'password',
+                'params', 'fragment',
+            ]
+            cfg = {}
+            for i in arr:
+                v = getattr(u, i)
+                if v:
+                    cfg[i] = v
+            if u.path and u.path != '/':
+                cfg['database'] = u.path.strip('/').replace('/', '.')
+            if u.query:
+                query = simplify_lists(parse_qs(u.query))
+                for i in query:
+                    if i not in cfg and query[i]:
+                        cfg[i] = query[i]
             cfg['dsn'] = makeDSN(cfg)
-        else:
+        else: # dsn Context
             from ..core.conf import Conf
             obj = Conf(dsnConfig)
             cfg = obj()
             cfg = cfg[dsn] if isinstance(cfg, dict) and dsn in cfg else {}
             cfg['dsn'] = dsn
-            return check(cfg)
-    else:
+            cfg = check(cfg)
+    else: # dict
         cfg = check(dsn)
-        cfg['dsn'] = makeDSN(cfg)
+        if 'dsn' not in cfg:
+            cfg['dsn'] = makeDSN(cfg)
     return cfg
+
+
+def trDict(d: dict, tr: dict) -> dict:
+    """Translate keys of a dictionary
+
+    Args:
+        d (dict): from dict
+        tr (dict): translate dict
+
+    Returns:
+        dict: dict translated
+
+    Examples:
+        ```python
+        cfg={
+            'passwd':'xpto',
+            'username':'admin',
+        }
+        arr = {
+            'type': 'scheme',
+            'db': 'database',
+            'username': 'user',
+            'passwd': 'password',
+            'pass': 'password',
+        }
+        print(trDict(cfg, arr))
+        # {'password': 'xpto', 'user': 'admin'}
+        ```
+    """
+    for i in tr:
+        if i in d and tr[i] not in d:
+            d[tr[i]] = d[i]
+            del (tr[i])
+    return d
+
+    return {k: d[k] for k in arr if k in d}
 
 
 def simplify_lists(data):

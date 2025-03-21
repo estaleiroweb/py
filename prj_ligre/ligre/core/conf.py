@@ -37,12 +37,12 @@ class Conf:
         """
         if Conf.subdir not in Conf.path:
             Conf.path[Conf.subdir] = []
-            Conf.__checkDir(sys.path[0])
             d, dOld = __file__, ''
             while d and d != dOld:
                 dOld, d = d, os.path.dirname(d)
                 Conf.__checkDir(d)
-
+            Conf.__checkDir(sys.path[0])
+            Conf.path[Conf.subdir]=Conf.path[Conf.subdir][::-1]
         self.__subdir: str = self.subdir
         self.__dir: list = []
         self.__file: str = file
@@ -70,11 +70,15 @@ class Conf:
             return out[0] if len(out) == 1 else out
         return conf
 
+    def __repr__(self) -> str:
+        return f'file: {self.__file}, subdir: {self.__subdir}, dir: {self.__dir}, reulst: {self.__call__()}'
+
     @classmethod
     def __checkDir(cls, dir: str):
         dir = os.path.join(dir, cls.subdir)
-        if os.path.isdir(dir):
-            cls.path[cls.subdir].append(os.path.realpath(dir))
+        dir = os.path.realpath(dir)
+        if os.path.isdir(dir) and dir not in cls.path[cls.subdir]:
+            cls.path[cls.subdir].append(dir)
 
     @property
     def dir(self) -> list:

@@ -1,5 +1,3 @@
-from pwdb.core.conf import Conf
-
 secret = None
 """Secret key to crypt sensible data"""
 
@@ -61,10 +59,12 @@ formats = {
 
 contact: list[dict] = []
 """
-    List of contacts of project.
+List of contacts of project.
 
-    ```python
-    [
+Returns:
+    settings.json (part)
+    ```json
+    "contact": [
         {
             "name": "Full name",
             "e_mail": [
@@ -75,103 +75,11 @@ contact: list[dict] = []
             ]
         }
     ]
-```
+    ```
 """
 
 
-class email:
-    """Email config"""
-
-    from_name: str = "localhost"
-    """Display name to send emails"""
-
-    from_address: str = "root@localhost"
-    """E-mail adrees to send one"""
-
-    class smtp:
-        """SMPT configurations"""
-
-        server: str = "smtp.localhost.com.br"
-        """Valid server address to send emails"""
-
-        port: int = 25
-        """Port of comunication of the SMPT server address"""
-
-        user: str = None
-        """Username if exists"""
-
-        password: str = None
-        """Password if exists user"""
-
-        use_tls: bool = False
-        """Transport Layer Security"""
-
-        use_ssl: bool = False
-        """Secure Sockets Layer"""
-
-        ssl_certfile = None
-        """SSL cer file"""
-
-        ssl_keyfile = None
-        """SSL key file"""
-
-        timeout = None
-        """Maximum downtime"""
-
-
-class cookie:
-    """Cookie settings"""
-    name: str = "project"
-    age: int = None
-    domain = None
-    path: str = "/"
-    secure: bool = False
-    httponly: bool = False
-    samesite: str = None
-
-
-class web:
-    webserver: dict = {
-        ":443": {
-            "bind": "",
-            "port": 443,
-            "https": True,
-            "keyfile": "/cer/key.pem",
-            "certfile": "/cer/cert.pem",
-                        "router": ".roter.main"
-        },
-        ":80": {
-            "bind": "",
-            "port": 80,
-            "redirect": ":443"
-        }
-    }
-
-    class log:
-        """
-        ```
-        {
-            "format": "",
-            "type": []
-        }
-        ```
-        """
-        error: dict = {}
-        info: dict = {}
-
-    class file_upload:
-        {
-            "max_size": 2621440,
-            "temp_dir": None,
-            "permissions": 644,
-            "directory_permissions": 755
-        },
-
-
-tr_url: list = []
-
 """
-- `"tr_url":None`: Regular expression to translate URLs before check permition
 
 # SETTINGS Documentation
 
