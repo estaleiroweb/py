@@ -11,10 +11,10 @@ from ligre.core.conf import Conf
 from ligre.db import conn
 # fmt: on
 
-evoice=conn.connect('evoice')
-res=evoice.queryAll('show databases')
-print(res)
-quit()
+# evoice=conn.connect('evoice')
+# res=evoice.queryAll('show databases')
+# print(res)
+# quit()
 
 def test():
     key = 'ZBHE04'
