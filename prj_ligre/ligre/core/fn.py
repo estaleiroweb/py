@@ -44,10 +44,10 @@ def dsn(dsn: 'str|dict') -> dict:
         for i in arr:
             if i not in c:
                 c[i] = ''
-        strDsn = f'{c['scheme']}://' if c['scheme'] else ''
-        strDsn += f'{c['username']}@' if c['username'] else ''
-        port = f':{c['port']}' if c['port'] else ''
-        strDsn += f'{c['hostname']}{port}' if c['hostname'] else ''
+        strDsn = f'{c["scheme"]}://' if c['scheme'] else ''
+        strDsn += f'{c["username"]}@' if c['username'] else ''
+        port = f':{c["port"]}' if c['port'] else ''
+        strDsn += f'{c["hostname"]}{port}' if c['hostname'] else ''
         strDsn += c['path'] if c['path'] else ''
         return strDsn
 
