@@ -1,4 +1,5 @@
 import re
+import time
 from abc import ABC, abstractmethod
 
 DEBUG_NONE: int = 0
@@ -69,10 +70,10 @@ class Main(ABC):
     }
     """
     Collection of predefined command prompts for various systems.
-    
+
     Contains regular expressions that match common shell prompts for different
     operating systems and devices.
-    
+
     Returns:
         dict[str,str]: Mapping of system names to their respective prompt regex patterns
     """
@@ -91,10 +92,10 @@ class Main(ABC):
     }
     """
     Collection of predefined patterns for handling common terminal interactions.
-    
+
     Each entry defines a pattern to match and an action to take when encountered
     during command execution.
-    
+
     Returns:
         dict[str, dict[str, str|int|callable]]: Dictionary of interaction handlers with:
             - 'er': Regular expression pattern to match
@@ -121,6 +122,9 @@ class Main(ABC):
         self._conn = None
         """Conection of collect"""
 
+        self._session = None
+        """Session of connection"""
+
         self.welcome: str = None
         """Welcome content. It is the firts content after connection and before any command"""
 
@@ -132,6 +136,12 @@ class Main(ABC):
 
         self.lf = '\n'
         """End of line used to send commands"""
+
+        self.leaveInteractive: str = ':END:'
+        """Command to leave the interactive mode"""
+
+        self.sleep: float = 0
+        """Time to sleep after send a command"""
 
     def __del__(self):
         """
@@ -160,6 +170,7 @@ class Main(ABC):
         if not self._conn:
             return False
         if self.__first:
+            self.buffer = ''
             self.welcome = self._expect()
             self.__first = False
         if not command:
@@ -182,7 +193,8 @@ class Main(ABC):
             return out
         else:
             try:
-                if self._send(command):
+                if self.__send(command):
+                    self.buffer = ''
                     return self._expect()
             except Exception as e:
                 self._error(3, e)
@@ -259,7 +271,8 @@ class Main(ABC):
                     'er': str,      # Regular expression to match (required)
                     'exit': int,    # Exit code to return (optional)
                     'send': str,    # String to send in response (optional)
-                    'exec': callable # Function to call with self as argument (optional)
+                    # Function to call with self as argument (optional)
+                    'exec': callable
                 }
                 ```
         """
@@ -298,8 +311,43 @@ class Main(ABC):
         self.__more = []
         self._debug_info('Clear more')
 
+    @property
+    def backSpc(self) -> str:
+        b = '\x08'*len(self.leaveInteractive)
+        return b+self.lf
+
     @abstractmethod
-    def _send(self, command: str) -> bool:
+    def _send(self, command: str):
+        """
+        Execute a single command.
+
+        Handles different input types:
+        - str: Single command execution
+
+        Args:
+            command (str): Command(s) to execute.
+        """
+        pass
+
+    @abstractmethod
+    def _recv(self) -> 'str|None':
+        """
+        Receive the output of the command.
+
+        Args:
+            prompt (str|list): Prompt of command if exists
+
+        Returns:
+            str: Terminal output
+        """
+        pass
+
+    @abstractmethod
+    def _set_timeout(self, value: int) -> bool:
+        """Send the timeout value to connection class"""
+        pass
+
+    def __send(self, command: str) -> bool:
         """
         Execute a single command.
 
@@ -312,48 +360,11 @@ class Main(ABC):
         Returns:
             bool: True if successful, False otherwise.
         """
-        pass
-
-    @abstractmethod
-    def _expect(self) -> 'str|None':
-        """
-        Wait for prompt or defined patterns.
-
-        Detects connection closure, prompts, and interactive patterns.
-
-        Returns:
-            str|None: Command output in format matching the input type, 
-                or None if connection is closed or error occurs
-        """
-        pass
-
-    @abstractmethod
-    def _set_timeout(self, value: int) -> bool:
-        """Send the timeout value to connection class"""
-        pass
-
-    @abstractmethod
-    def interactive(self):
-        """
-        Enter in the interactive mode.
-
-        The user will be control of session.
-
-        Type :END: or exit of terminal to leave the interactive mode.
-
-        After leave interactive mode, the script came back.
-        """
-        pass
-
-    @abstractmethod
-    def close(self):
-        """
-        Close connection.
-
-        Attempts to close both the channel and SSH client,
-        suppressing any exceptions that might occur during closure.
-        """
-        pass
+        if command and type(command) == str and self.isConnected():
+            self._debug_cmd(command)
+            self._send((command + self.lf).encode(self.charset))
+            return True
+        return False
 
     def _debug_primary(self, text):
         """
@@ -413,6 +424,134 @@ class Main(ABC):
                 print(f'{content}')
         return False if idError else True
 
+    def _action(self, action: dict) -> bool:
+        """
+        Execute an action based on the provided pattern.
+
+        Actions can include sending a response, executing a function, or setting an exit code.
+
+        Args:
+            action (dict): Action to execute
+
+        Returns:
+            bool: True if script is the end, False otherwise
+        """
+        if 'send' in action:
+            self._send(action['send'])
+        if 'exec' in action and callable(action['exec']):
+            if action['exec'](self):
+                return True
+        if 'exit' in action:
+            self.exit = action['exit']
+            return True
+        return False
+
+    def _checkMore(self, recv: str) -> bool:
+        """
+        Check if the received content matches any of the defined patterns.
+
+        Args:
+            recv (str): Received content to check
+
+        Returns:
+            bool: True if a pattern is matched, False otherwise
+        """
+        for action in self.more:
+            if 'er' in action and re.search(action['er'], recv):
+                if self._action(action):
+                    return True
+        return False
+
+    def _checkPrompt(self) -> bool:
+        """
+        Check if the received content matches the prompt pattern.
+
+        Returns:
+            bool: True if prompt is matched, False otherwise
+        """
+        prompt = self.prompt
+        if not prompt:
+            return True
+        if re.search(prompt, self.buffer):
+            return self._stripPrompt()
+        return False
+
+    def _stripPrompt(self) -> bool:
+        """
+        Remove the prompt pattern from the content.
+
+        Args:
+            content (str): Content to strip
+
+        Returns:
+            bool: every True
+        """
+        prompt = self.prompt
+        if prompt:
+            self.buffer = re.sub(prompt, '', self.buffer)
+        return True
+
+    def _get_session(self):
+        """Get the session of connection"""
+        return self._session
+
+    def _expect(self) -> 'str|None':
+        """
+        Wait for prompt or defined patterns.
+
+        Detects connection closure, prompts, and interactive patterns.
+
+        Returns:
+            str|None: Command output in format matching the input type,
+                or None if connection is closed or error occurs
+        """
+        start_time = time.time()
+        timeout = self.timeout
+
+        def checkTime():
+            if timeout == 0:
+                return True
+            return (time.time() - start_time) < timeout
+
+        while self.isConnected() and checkTime():
+            try:
+                recv = self._recv()
+                if not recv:
+                    self._debug_warning("Connection closed")
+                    self.exit = 0
+                    break
+                self._debug_primary(recv)
+                self.buffer += recv
+            except:
+                # self._error(2)
+                break
+            if self._checkPrompt() or self._checkMore(self.buffer):
+                break
+            if self.sleep:
+                time.sleep(self.sleep)
+
+        return self.buffer
+
+    def isConnected(self) -> bool:
+        """Check if connection is activated"""
+        return bool(self._conn)
+
+    def close(self) -> bool:
+        """
+        Close connection.
+
+        Attempts to close both the channel and SSH client,
+        suppressing any exceptions that might occur during closure.
+        """
+        try:
+            if self._conn:
+                self._conn.close()
+                self._conn = None
+                return True
+        except Exception as e:
+            pass
+        return False
+
     def show(self, content):
         """
         Output the expect content in the basic format.
@@ -436,6 +575,85 @@ class Main(ABC):
                     c += 1
         else:
             print(content)
+
+    def _interactiveRecv(self, rlist: list = None) -> 'bool|list':
+        """
+        Receive terminal output and handle interactive sessions.
+
+        Returns:
+            bool|list: True if connection is closed, list otherwise
+        """
+        import sys
+        import socket
+        import select
+
+        r, w, e = select.select(rlist, [], [])
+        # r, w, e = select.select(rlist, [], [], self.timeout)
+
+        if self._get_session() in r:
+            try:
+                recv = self._recv()
+                if recv:
+                    self.buffer += recv
+                    sys.stdout.write(recv)
+                    sys.stdout.flush()
+            except EOFError:
+                self._debug_warning("Connection closed")
+                self.exit = 1
+                return True
+            except socket.timeout:
+                pass
+            except OSError:
+                # Process closed the pipe
+                return True
+        return r
+
+    def interactive(self):
+        """
+        Enter in the interactive mode.
+
+        The user will be control of session.
+
+        Type self.leaveInteractive value or exit of terminal to leave the interactive mode.
+
+        After leave interactive mode, the script came back.
+        """
+        if not self.isConnected():
+            return
+        import os
+        import sys
+        import termios
+        import tty
+
+        # Obter os atributos do terminal
+        oldtty = termios.tcgetattr(sys.stdin)
+        try:
+            # Configurar modo raw
+            tty.setraw(sys.stdin.fileno())
+            tty.setcbreak(sys.stdin.fileno())
+
+            self.buffer = ''
+            input_buffer = ''
+            rlist = [sys.stdin]
+            if self._get_session():
+                rlist.insert(0, self._get_session())
+
+            while self.isConnected():
+                r = self._interactiveRecv(rlist)
+                if isinstance(r, list) and sys.stdin in r:
+                    available = os.read(sys.stdin.fileno(), 65535)
+                    if len(available) == 0:
+                        break
+                    input_buffer += available.decode(self.charset)
+                    if self.leaveInteractive in input_buffer:
+                        self._send(self.backSpc)
+                        break
+                    self._send(available)
+                elif r == True:
+                    break
+        finally:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, oldtty)
+            print()
 
 
 class SSH(Main):
@@ -494,25 +712,25 @@ class SSH(Main):
 
         self.prompt = prompt
         self.more = more
+        self.timeout = timeout
 
-        self._conn = paramiko.SSHClient()
+        self._conn: paramiko.SSHClient = paramiko.SSHClient()
         """Conection SSH of collect"""
 
         self._session: paramiko.Channel = None
         """Session of SSH connection"""
 
         try:
-            self._debug_info('Connecting')
+            self._debug_info(
+                f'SSH Connecting: {username}@{hostname}:{port}')
             self._conn.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            self._conn.connect(
-                hostname=hostname,
-                port=port,
-                username=username,
-                password=password,
-                timeout=timeout,
-                **paramiko_conf
-            )
-            self._debug_info('Connected')
+            self._conn.connect(hostname=hostname,
+                               port=port,
+                               username=username,
+                               password=password,
+                               timeout=timeout,
+                               **paramiko_conf)
+            self._debug_info('SSH Connected')
             # print(self._conn)
             self._session = self._conn.invoke_shell()
             self._session.settimeout(self.timeout)
@@ -520,109 +738,33 @@ class SSH(Main):
             self.conn = None
             self._error(4, e)
 
+    def isConnected(self) -> bool:
+        if not self._conn or not self._session:
+            return False
+        return not self._session.closed
+
     def _set_timeout(self, value: int) -> bool:
-        if not self._session or self._session.closed:
-            return False
-        self._session.settimeout(self.timeout)
-        return True
+        if self.isConnected():
+            self._session.settimeout(self.timeout)
+            return True
+        return False
 
-    def _send(self, command: str) -> bool:
-        if not self._session or self._session.closed:
-            return False
-        if command and type(command) == str:
-            self._debug_cmd(command)
-            self._session.send(command + self.lf)
-        return True
-
-    def _expect(self) -> 'str|None':
-        if not self._session or self._session.closed:
-            return
-        self.buffer = ''
-        more: list = self.more
-        prompt: str = self.prompt
-        while True:
-            try:
-                recv = self._session.recv(65535).decode(self.charset)
-                if len(recv) == 0:
-                    self._debug_warning("Connection closed by server")
-                    self.exit = 0
-                    break
-                self._debug_primary(recv)
-                self.buffer += recv
-            except:
-                # self._error(2)
-                break
-            if re.search(prompt, self.buffer):
-                self.buffer = re.sub(
-                    prompt,
-                    '',
-                    self.buffer)
-                break
-            for i in more:
-                if re.search(i['er'], self.buffer):
-                    if 'send' in i:
-                        self._session.send(i['send'])
-                    if 'exec' in i and callable(i['exec']):
-                        i['exec'](self)
-                    if 'exit' in i:
-                        self.exit = i['exit']
-                        return self.buffer
-        return self.buffer
-
-    def interactive(self):
-        import os
-        import sys
-        import termios
-        import select
-        import socket
-        import tty
-
-        # Obter os atributos do terminal
-        oldtty = termios.tcgetattr(sys.stdin)
-        try:
-            # Configurar modo raw
-            tty.setraw(sys.stdin.fileno())
-            tty.setcbreak(sys.stdin.fileno())
-
-            self.buffer = ''
-            input_buffer = ''
-            # Enquanto o canal estiver aberto
-            while True:
-                r, w, e = select.select([self._session, sys.stdin], [], [])
-                if self._session in r:
-                    try:
-                        recv = self._session.recv(1024).decode(self.charset)
-                        if len(recv) == 0:
-                            self._debug_warning("Connection closed")
-                            self.exit = 0
-                            break
-                        self.buffer += recv
-                        sys.stdout.write(recv)
-                        sys.stdout.flush()
-                    except socket.timeout:
-                        pass
-                if sys.stdin in r:
-                    available = os.read(sys.stdin.fileno(), 65535)
-                    if len(available) == 0:
-                        break
-                    input_buffer += available.decode(self.charset)
-                    if ":END:" in input_buffer:
-                        self._session.send(('\x08'*4)+self.lf)
-                        break
-
-                    self._session.send(available)
-        finally:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, oldtty)
-            print()
-
-    def close(self):
+    def close(self) -> bool:
         try:
             if self._session:
                 self._session.close()
             if self._conn:
                 self._conn.close()
+            return True
         except Exception as e:
             pass
+        return False
+
+    def _send(self, command: str):
+        self._session.send(command)
+
+    def _recv(self) -> 'str|None':
+        return self._session.recv(65535).decode(self.charset)
 
 
 class Telnet(Main):
@@ -638,7 +780,7 @@ class Telnet(Main):
                  username: str = None,
                  password: str = None,
                  port: int = 23,
-                 timeout: float = 10,
+                 timeout: float = 60,
                  prompt: str = None,
                  more: list = []
                  ):
@@ -661,34 +803,43 @@ class Telnet(Main):
         self.more = more
         self.timeout = timeout
 
+        self._conn: telnetlib.Telnet = None
+        """Conection Telnet of collect"""
+
         try:
-            self._debug_info('Connecting via Telnet')
-            self._conn: telnetlib.Telnet = telnetlib.Telnet(
-                hostname, port, timeout)
-            self._debug_info('Connected')
-
-            # Handle login if credentials provided
-            if username:
-                # Wait for username prompt
-                self._conn.read_until(b"login: ", timeout)
-                self._conn.write(username.encode(self.charset) + b"\n")
-
-                if password:
-                    # Wait for password prompt
-                    self._conn.read_until(b"Password: ", timeout)
-                    self._conn.write(password.encode(self.charset) + b"\n")
-
+            self._debug_info(
+                f'Telnet Connecting: {username}@{hostname}:{port}')
+            self._conn = telnetlib.Telnet(hostname,
+                                          port,
+                                          timeout)
+            self._debug_info('Telnet Connected')
+            self.__login(username, password)
             # Initial read to get welcome message
-            self._debug_info('Reading initial output')
         except Exception as e:
             self._conn = None
             self._error(4, e)
 
-    def __del__(self):
+    def __login(self, username: str, password: str) -> bool:
         """
-        Destructor that ensures Telnet connections are properly closed.
+        Handle login process for Telnet connection.
+
+        Args:
+            username (str): Telnet username
+            password (str): Telnet password
+
+        Returns:
+            bool: True if successful, False otherwise
         """
-        self.close()
+        if not username:
+            return True
+        if self.isConnected():
+            self._conn.read_until(b"login: ", self.timeout)
+            self._conn.write(username.encode(self.charset) + b"\n")
+            if password:
+                self._conn.read_until(b"Password: ", self.timeout)
+                self._conn.write(password.encode(self.charset) + b"\n")
+            return True
+        return False
 
     def _set_timeout(self, value: int) -> bool:
         """
@@ -700,160 +851,52 @@ class Telnet(Main):
         Returns:
             bool: True if successful, False otherwise.
         """
-        if not self._conn:
-            return False
-        self._conn.timeout = value
-        return True
+        if self.isConnected():
+            self._conn.timeout = value
+            return True
+        return False
 
-    def _send(self, command: str) -> bool:
-        """
-        Send a command to the Telnet session.
+    def _send(self, command: str):
+        self._conn.write(command)
 
-        Args:
-            command (str): Command to send.
-
-        Returns:
-            bool: True if successful, False otherwise.
-        """
-        if not self._conn:
-            return False
-        if command and type(command) == str:
-            self._debug_cmd(command)
-            self._conn.write((command + self.lf).encode(self.charset))
-        return True
+    def _recv(self) -> 'str|None':
+        return self._conn.read_eager().decode(self.charset)
 
     def _expect(self) -> 'str|None':
-        """
-        Wait for prompt or defined patterns on the Telnet connection.
+        more: list = self.more
+        patterns = [self.prompt]
+        for pattern in more:
+            if 'er' in pattern:
+                patterns.append(pattern['er'])
+        while self.isConnected():
+            try:
+                index, _, recv = self._conn.expect(patterns, self.timeout)
+                if recv:
+                    recv = recv.decode(self.charset)
+                    self._debug_primary(recv)
+                    self.buffer += recv
 
-        Detects connection closure, prompts, and interactive patterns.
+                if index == 0:  # Prompt match
+                    self._stripPrompt()
+                elif index < 0:  # Timeout
+                    self._debug_warning("Connection timeout")  # TODO Check it
+                    self.exit = 1  # TODO Check it
+                elif not self._action(more[index-1]):  # Prompt more
+                    if self.sleep:
+                        time.sleep(self.sleep)
+                    continue
+                break
+            except EOFError:
+                self._debug_warning("Connection closed by remote host")
+                self.exit = 1
+                break
+            except Exception as e:
+                self._error(2, e)
+                break
+        return self.buffer
 
-        Returns:
-            str|None: Command output, or None if connection is closed or error occurs
-        """
-        if not self._conn:
-            return
-
-        self.buffer = ''
-        more = self.more
-        prompt_pattern = self.prompt.encode(
-            self.charset) if self.prompt else None
-
-        import re
-
-        try:
-            # Create list of regex patterns from more handlers
-            patterns = []
-            for pattern in more:
-                if 'er' in pattern:
-                    patterns.append(pattern['er'].encode(self.charset))
-
-            if prompt_pattern:
-                patterns.append(prompt_pattern)
-
-            # Wait for a pattern match
-            index, match, data = self._conn.expect(patterns, self.timeout)
-
-            # Process data
-            if data:
-                decoded_data = data.decode(self.charset)
-                self._debug_primary(decoded_data)
-                self.buffer += decoded_data
-
-                # Handle more patterns
-                for i, pattern in enumerate(more):
-                    if i == index:  # This pattern matched
-                        if 'send' in pattern:
-                            self._conn.write(
-                                pattern['send'].encode(self.charset))
-                        if 'exec' in pattern and callable(pattern['exec']):
-                            pattern['exec'](self)
-                        if 'exit' in pattern:
-                            self.exit = pattern['exit']
-                            return self.buffer
-
-            # Remove prompt from output if it's included
-            if prompt_pattern and re.search(self.prompt, self.buffer):
-                self.buffer = re.sub(self.prompt, '', self.buffer)
-
-            return self.buffer
-
-        except EOFError:
-            self._debug_warning("Connection closed by remote host")
-            self.exit = 1
-            return self.buffer
-        except Exception as e:
-            self._error(2, e)
-            return self.buffer
-
-    def close(self):
-        try:
-            if self._conn:
-                self._conn.close()
-                self._conn = None
-        except Exception as e:
-            pass
-
-    def interactive(self):
-        """
-        Enter in the interactive mode for Telnet.
-
-        The user will be in control of the session.
-
-        Type :END: or exit the terminal to leave the interactive mode.
-
-        After leaving interactive mode, the script comes back.
-        """
-        import os
-        import sys
-        import termios
-        import select
-        import tty
-
-        # Get terminal attributes
-        oldtty = termios.tcgetattr(sys.stdin)
-        try:
-            # Configure raw mode
-            tty.setraw(sys.stdin.fileno())
-            tty.setcbreak(sys.stdin.fileno())
-
-            self.buffer = ''
-            input_buffer = ''
-
-            # While connected
-            while True:
-                r, w, e = select.select(
-                    [self._conn.get_socket(), sys.stdin], [], [])
-
-                if self._conn.get_socket() in r:
-                    try:
-                        data = self._conn.read_eager()
-                        if not data:
-                            continue
-                        recv = data.decode(self.charset)
-                        self.buffer += recv
-                        sys.stdout.write(recv)
-                        sys.stdout.flush()
-                    except EOFError:
-                        self._debug_warning("Connection closed")
-                        self.exit = 1
-                        break
-
-                if sys.stdin in r:
-                    available = os.read(sys.stdin.fileno(), 65535)
-                    if len(available) == 0:
-                        break
-                    input_buffer += available.decode(self.charset)
-                    if ":END:" in input_buffer:
-                        # Send backspaces to remove :END: from the terminal
-                        self._conn.write(
-                            ('\x08'*4+self.lf).encode(self.charset))
-                        break
-
-                    self._conn.write(available)
-        finally:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, oldtty)
-            print()
+    def _get_session(self):
+        return self._conn.get_socket()
 
 
 class Socket(Main):
@@ -887,10 +930,11 @@ class Socket(Main):
         self.prompt = prompt
         self.more = more
         self.timeout = timeout
+        self._conn: socket.socket = None
 
         try:
             self._debug_info(f'Connecting to socket {hostname}:{port}')
-            self._conn: socket.socket = socket.socket(
+            self._conn = socket.socket(
                 socket.AF_INET, socket.SOCK_STREAM
             )
             self._conn.settimeout(timeout)
@@ -899,12 +943,6 @@ class Socket(Main):
         except Exception as e:
             self._conn = None
             self._error(4, e)
-
-    def __del__(self):
-        """
-        Destructor that ensures socket connections are properly closed.
-        """
-        self.close()
 
     def _set_timeout(self, value: int) -> bool:
         """
@@ -921,156 +959,14 @@ class Socket(Main):
         self._conn.settimeout(value)
         return True
 
-    def _send(self, command: str) -> bool:
-        """
-        Send a command to the socket.
+    def _send(self, command: str):
+        self._conn.sendall(command)
 
-        Args:
-            command (str): Command to send.
+    def _recv(self) -> 'str|None':
+        return self._conn.recv(1024).decode(self.charset)
 
-        Returns:
-            bool: True if successful, False otherwise.
-        """
-        if not self._conn:
-            return False
-        if command and type(command) == str:
-            self._debug_cmd(command)
-            self._conn.sendall((command + self.lf).encode(self.charset))
-        return True
-
-    def _expect(self) -> 'str|None':
-        """
-        Wait for prompt or defined patterns on the socket connection.
-
-        Detects connection closure, prompts, and interactive patterns.
-
-        Returns:
-            str|None: Command output, or None if connection is closed or error occurs
-        """
-        if not self._conn:
-            return
-
-        import re
-        import socket
-
-        self.buffer = ''
-        more = self.more
-        prompt = self.prompt
-
-        while True:
-            try:
-                # Receive data in chunks
-                chunk = self._conn.recv(4096)
-                if not chunk:
-                    self._debug_warning("Connection closed by server")
-                    self.exit = 1
-                    break
-
-                recv = chunk.decode(self.charset)
-                self._debug_primary(recv)
-                self.buffer += recv
-
-                # Check for prompt match
-                if prompt and re.search(prompt, self.buffer):
-                    self.buffer = re.sub(prompt, '', self.buffer)
-                    break
-
-                # Check for more patterns
-                for i in more:
-                    if re.search(i['er'], self.buffer):
-                        if 'send' in i:
-                            self._conn.sendall(i['send'].encode(self.charset))
-                        if 'exec' in i and callable(i['exec']):
-                            i['exec'](self)
-                        if 'exit' in i:
-                            self.exit = i['exit']
-                            return self.buffer
-
-            except socket.timeout:
-                # Timeout might be expected behavior
-                break
-            except Exception as e:
-                self._error(2, e)
-                break
-
-        return self.buffer
-
-    def close(self):
-        """
-        Close the socket connection safely.
-
-        Attempts to close the socket connection,
-        suppressing any exceptions that might occur during closure.
-        """
-        try:
-            if self._conn:
-                self._conn.close()
-                self._conn = None
-        except Exception as e:
-            pass
-
-    def interactive(self):
-        """
-        Enter in the interactive mode for socket.
-
-        The user will be in control of the session.
-
-        Type :END: or exit the terminal to leave the interactive mode.
-
-        After leaving interactive mode, the script comes back.
-        """
-        import os
-        import sys
-        import termios
-        import select
-        import tty
-
-        # Get terminal attributes
-        oldtty = termios.tcgetattr(sys.stdin)
-        try:
-            # Configure raw mode
-            tty.setraw(sys.stdin.fileno())
-            tty.setcbreak(sys.stdin.fileno())
-
-            self.buffer = ''
-            input_buffer = ''
-
-            # While connected
-            while True:
-                r, w, e = select.select([self._conn, sys.stdin], [], [], 0.1)
-
-                if self._conn in r:
-                    try:
-                        data = self._conn.recv(1024)
-                        if not data:
-                            self._debug_warning("Connection closed")
-                            self.exit = 1
-                            break
-
-                        recv = data.decode(self.charset)
-                        self.buffer += recv
-                        sys.stdout.write(recv)
-                        sys.stdout.flush()
-                    except Exception as e:
-                        self._error(2, e)
-                        break
-
-                if sys.stdin in r:
-                    available = os.read(sys.stdin.fileno(), 65535)
-                    if len(available) == 0:
-                        break
-
-                    input_buffer += available.decode(self.charset)
-                    if ":END:" in input_buffer:
-                        # Send backspaces to remove :END: from the terminal
-                        self._conn.sendall(
-                            ('\x08'*4+self.lf).encode(self.charset))
-                        break
-
-                    self._conn.sendall(available)
-        finally:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, oldtty)
-            print()
+    def _get_session(self):
+        return self._conn
 
 
 class Serial(Main):
@@ -1105,16 +1001,12 @@ class Serial(Main):
             more (list, optional): List of interaction patterns. Defaults to [].
         """
         super().__init__()
-        try:
-            import serial
-        except ImportError:
-            self._error(
-                4, "pyserial library not installed. Install with 'pip install pyserial'")
-            return
+        import serial
 
         self.prompt = prompt
         self.more = more
         self.timeout = timeout
+        self._conn: serial.Serial = None
 
         try:
             self._debug_info(f'Opening serial port {port} at {baudrate} baud')
@@ -1131,11 +1023,8 @@ class Serial(Main):
             self._conn = None
             self._error(4, e)
 
-    def __del__(self):
-        """
-        Destructor that ensures serial port connections are properly closed.
-        """
-        self.close()
+    def isConnected(self) -> bool:
+        return True if self._conn and self._conn.is_open else False
 
     def _set_timeout(self, value: int) -> bool:
         """
@@ -1152,79 +1041,15 @@ class Serial(Main):
         self._conn.timeout = value
         return True
 
-    def _send(self, command: str) -> bool:
-        """
-        Send a command to the serial port.
+    def _send(self, command: str):
+        self._conn.write(command)
+        self._conn.flush()
 
-        Args:
-            command (str): Command to send.
+    def _recv(self) -> 'str|None':
+        if self._conn.in_waiting:
+            return self._conn.read(self._conn.in_waiting).decode(self.charset)
 
-        Returns:
-            bool: True if successful, False otherwise.
-        """
-        if not self._conn or not self._conn.is_open:
-            return False
-        if command and type(command) == str:
-            self._debug_cmd(command)
-            self._conn.write((command + self.lf).encode(self.charset))
-            self._conn.flush()
-        return True
-
-    def _expect(self) -> 'str|None':
-        """
-        Wait for prompt or defined patterns on the serial connection.
-
-        Detects connection closure, prompts, and interactive patterns.
-
-        Returns:
-            str|None: Command output, or None if connection is closed or error occurs
-        """
-        if not self._conn or not self._conn.is_open:
-            return
-
-        import re
-        import time
-
-        self.buffer = ''
-        more = self.more
-        prompt = self.prompt
-
-        start_time = time.time()
-        timeout = self.timeout
-
-        while (time.time() - start_time) < timeout:
-            # Check if data is available
-            if self._conn.in_waiting:
-                chunk = self._conn.read(self._conn.in_waiting)
-                if chunk:
-                    recv = chunk.decode(self.charset)
-                    self._debug_primary(recv)
-                    self.buffer += recv
-
-                    # Check for prompt match
-                    if prompt and re.search(prompt, self.buffer):
-                        self.buffer = re.sub(prompt, '', self.buffer)
-                        break
-
-                    # Check for more patterns
-                    for i in more:
-                        if re.search(i['er'], self.buffer):
-                            if 'send' in i:
-                                self._conn.write(
-                                    i['send'].encode(self.charset))
-                                self._conn.flush()
-                            if 'exec' in i and callable(i['exec']):
-                                i['exec'](self)
-                            if 'exit' in i:
-                                self.exit = i['exit']
-                                return self.buffer
-            else:
-                # Sleep briefly to avoid CPU spinning
-                time.sleep(0.01)
-
-        return self.buffer
-
-    def close(self):
+    def close(self) -> bool:
         """
         Close the serial port connection safely.
 
@@ -1232,71 +1057,40 @@ class Serial(Main):
         suppressing any exceptions that might occur during closure.
         """
         try:
-            if self._conn and self._conn.is_open:
-                self._conn.close()
+            if self._conn:
+                if self._conn.is_open:
+                    self._conn.close()
                 self._conn = None
+                return True
         except Exception as e:
             pass
+        return False
 
-    def interactive(self):
+    def _get_session(self):
+        return self._conn
+
+    def _interactiveRecv(self, rlist: list = None) -> 'bool|list':
         """
-        Enter in the interactive mode for serial port.
+        Receive terminal output and handle interactive sessions.
 
-        The user will be in control of the session.
-
-        Type :END: or exit the terminal to leave the interactive mode.
-
-        After leaving interactive mode, the script comes back.
+        Returns:
+            bool|list: True if connection is closed, list otherwise
         """
-        import os
         import sys
-        import termios
         import select
-        import tty
 
-        # Get terminal attributes
-        oldtty = termios.tcgetattr(sys.stdin)
-        try:
-            # Configure raw mode
-            tty.setraw(sys.stdin.fileno())
-            tty.setcbreak(sys.stdin.fileno())
+        rlist = [sys.stdin]
+        if self._conn.in_waiting:
+            # Data available from serial port
+            recv = self._recv()
+            if recv:
+                self.buffer += recv
+                sys.stdout.write(recv)
+                sys.stdout.flush()
 
-            self.buffer = ''
-            input_buffer = ''
-
-            # While connected
-            while self._conn and self._conn.is_open:
-                # Use select to check for input from terminal or serial port
-                rlist = [sys.stdin]
-                if self._conn.in_waiting:
-                    # Data available from serial port
-                    data = self._conn.read(self._conn.in_waiting)
-                    if data:
-                        recv = data.decode(self.charset)
-                        self.buffer += recv
-                        sys.stdout.write(recv)
-                        sys.stdout.flush()
-
-                # Check for keyboard input
-                r, w, e = select.select([sys.stdin], [], [], 0.1)
-                if sys.stdin in r:
-                    available = os.read(sys.stdin.fileno(), 65535)
-                    if len(available) == 0:
-                        break
-
-                    input_buffer += available.decode(self.charset)
-                    if ":END:" in input_buffer:
-                        # Send backspaces to remove :END: from the terminal
-                        self._conn.write(
-                            ('\x08'*4+self.lf).encode(self.charset))
-                        self._conn.flush()
-                        break
-
-                    self._conn.write(available)
-                    self._conn.flush()
-        finally:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, oldtty)
-            print()
+        # Check for keyboard input
+        r, w, e = select.select(rlist, [], [], 0.1)
+        return r
 
 
 class Spawn(Main):
@@ -1330,11 +1124,15 @@ class Spawn(Main):
         import subprocess
         import pty
         import os
+        import io
 
         self.prompt = prompt
         self.more = more
         self.timeout = timeout
 
+        self._os = os
+        self._conn: io.FileIO = None
+        self._process: subprocess.Popen = None
         try:
             self._debug_info(f'Spawning process: {command}')
 
@@ -1348,7 +1146,7 @@ class Spawn(Main):
                 cmd_args = command
 
             # Start the process
-            self._process:subprocess.Popen = subprocess.Popen(
+            self._process = subprocess.Popen(
                 cmd_args,
                 stdin=slave,
                 stdout=slave,
@@ -1361,7 +1159,7 @@ class Spawn(Main):
 
             # Store the master fd for communication
             self._conn = os.fdopen(master, 'wb+', buffering=0)
-            self._master_fd = master
+            self._session = master
             os.close(slave)
 
             self._debug_info('Process spawned')
@@ -1369,11 +1167,10 @@ class Spawn(Main):
             self._conn = None
             self._error(4, e)
 
-    def __del__(self):
-        """
-        Destructor that ensures spawned processes are properly terminated.
-        """
-        self.close()
+    def isConnected(self) -> bool:
+        if not self._conn or self._process.poll() is not None:
+            return False
+        return True
 
     def _set_timeout(self, value: int) -> bool:
         """
@@ -1390,90 +1187,14 @@ class Spawn(Main):
         # Just store the timeout value, used in _expect
         return True
 
-    def _send(self, command: str) -> bool:
-        """
-        Send a command to the spawned process.
+    def _send(self, command: str):
+        self._conn.write(command)
+        # self._os.write(command)
 
-        Args:
-            command (str): Command to send.
+    def _recv(self) -> 'str|None':
+        return self._os.read(self._session, 4096).decode(self.charset)
 
-        Returns:
-            bool: True if successful, False otherwise.
-        """
-        if not self._conn or self._process.poll() is not None:
-            return False
-        if command and type(command) == str:
-            self._debug_cmd(command)
-            self._conn.write((command + self.lf).encode(self.charset))
-        return True
-
-    def _expect(self) -> 'str|None':
-        """
-        Wait for prompt or defined patterns from the spawned process.
-
-        Detects process termination, prompts, and interactive patterns.
-
-        Returns:
-            str|None: Command output, or None if process terminated or error occurs
-        """
-        if not self._conn or self._process.poll() is not None:
-            return
-
-        import os
-        import re
-        import select
-        import time
-
-        self.buffer = ''
-        more = self.more
-        prompt = self.prompt
-
-        start_time = time.time()
-        timeout = self.timeout
-
-        while (time.time() - start_time) < timeout:
-            # Check if the process is still running
-            if self._process.poll() is not None:
-                self._debug_warning(
-                    f"Process terminated with exit code {self._process.returncode}")
-                self.exit = self._process.returncode
-                break
-
-            # Check for data from the process
-            r, w, e = select.select([self._master_fd], [], [], 0.1)
-            if self._master_fd in r:
-                try:
-                    chunk = os.read(self._master_fd, 4096)
-                    if not chunk:
-                        continue
-
-                    recv = chunk.decode(self.charset)
-                    self._debug_primary(recv)
-                    self.buffer += recv
-
-                    # Check for prompt match
-                    if prompt and re.search(prompt, self.buffer):
-                        self.buffer = re.sub(prompt, '', self.buffer)
-                        break
-
-                    # Check for more patterns
-                    for i in more:
-                        if re.search(i['er'], self.buffer):
-                            if 'send' in i:
-                                os.write(self._master_fd,
-                                         i['send'].encode(self.charset))
-                            if 'exec' in i and callable(i['exec']):
-                                i['exec'](self)
-                            if 'exit' in i:
-                                self.exit = i['exit']
-                                return self.buffer
-                except OSError:
-                    # Process closed the pipe
-                    break
-
-        return self.buffer
-
-    def close(self):
+    def close(self) -> bool:
         """
         Terminate the spawned process and close file descriptors.
 
@@ -1491,7 +1212,6 @@ class Spawn(Main):
                     self._process.terminate()
 
                     # Give it a moment to terminate
-                    import time
                     time.sleep(0.5)
 
                     # Force kill if still running
@@ -1499,67 +1219,7 @@ class Spawn(Main):
                         self._process.kill()
 
                 self._process = None
+            return True
         except Exception as e:
             pass
-
-    def interactive(self):
-        """
-        Enter in the interactive mode for the spawned process.
-
-        The user will be in control of the session.
-
-        Type :END: or exit the terminal to leave the interactive mode.
-
-        After leaving interactive mode, the script comes back.
-        """
-        import os
-        import sys
-        import termios
-        import select
-        import tty
-
-        # Get terminal attributes
-        oldtty = termios.tcgetattr(sys.stdin)
-        try:
-            # Configure raw mode
-            tty.setraw(sys.stdin.fileno())
-            tty.setcbreak(sys.stdin.fileno())
-
-            self.buffer = ''
-            input_buffer = ''
-
-            # While process is running
-            while self._process.poll() is None:
-                r, w, e = select.select(
-                    [self._master_fd, sys.stdin], [], [], 0.1)
-
-                if self._master_fd in r:
-                    try:
-                        data = os.read(self._master_fd, 4096)
-                        if not data:
-                            continue
-
-                        recv = data.decode(self.charset)
-                        self.buffer += recv
-                        sys.stdout.write(recv)
-                        sys.stdout.flush()
-                    except OSError:
-                        # Process closed the pipe
-                        break
-
-                if sys.stdin in r:
-                    available = os.read(sys.stdin.fileno(), 65535)
-                    if len(available) == 0:
-                        break
-
-                    input_buffer += available.decode(self.charset)
-                    if ":END:" in input_buffer:
-                        # Send backspaces to remove :END: from the terminal
-                        os.write(self._master_fd, ('\x08'*4 +
-                                 self.lf).encode(self.charset))
-                        break
-
-                    os.write(self._master_fd, available)
-        finally:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, oldtty)
-            print()
+        return False
