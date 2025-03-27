@@ -7,47 +7,10 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from decimal import Decimal
 from enum import Enum, auto
+from ligre.db import models as m
 
 
-class Main():
-    conn: str = 'evoice'
-    """Connection of the database"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.xx = ''
-        """test"""
-    class fields:
-        """Collection of the fields"""
-        pass
-
-    class keys:
-        """Collection of the indexes"""
-        pass
-
-    class constraints:
-        """Collection of the constraints"""
-        pass
-
-    class foreignKey:
-        """Collection of the foreignKey"""
-        pass
-
-    class partitions:
-        """Config of the partition"""
-        pass
-
-    class sql:
-        """DDL, DML and DCL"""
-        pass
-    class data:
-        """First data of table"""
-        
-    def test(self)->bool:
-        """Test the table"""
-        return True
-
-class Table(Main):
+class Table(m.Table):
     """comment"""
 
     conn = 'evoice'
@@ -60,7 +23,15 @@ class Table(Main):
     avg_row_length = None
     max_rows = None
 
-    class fields:
+    def test(self):
+        self.create()
+        self.insert()
+        self.select()
+        self.select_id()
+        self.update()
+        self.delete()
+        self.drop()
+    class fields(m.Fields):
         nome = models.CharField(max_length=100)
         "Nome do exemplo."
 
@@ -97,12 +68,12 @@ class Table(Main):
         imagem = models.ImageField(upload_to='imagens/', blank=True, null=True)
         "Imagem anexada."
 
-    class indexes:
+    class keys(m.Keys):
         id = 0
         name = 1
         age = 2
 
-    class sql:
+    class sql(m.SQL):
         create = 'CREATE TABLE IF NOT EXISTS tb_test (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), age INT)'
         drop = 'DROP TABLE IF EXISTS tb_test'
         insert = 'INSERT INTO tb_test (name, age) VALUES (%s, %s)'
@@ -111,7 +82,7 @@ class Table(Main):
         select = 'SELECT * FROM tb_test'
         select_id = 'SELECT * FROM tb_test WHERE id = %s'
 
-    class data:
+    class data(m.Data):
         insert = [
             ('John', 25),
             ('Peter', 28),
@@ -128,15 +99,6 @@ class Table(Main):
             ('Michael', 36, 5),
             ('Sandy', 41, 6),
         ]
-
-    def test(self):
-        self.create()
-        self.insert()
-        self.select()
-        self.select_id()
-        self.update()
-        self.delete()
-        self.drop()
 
 
 print(Table.fields)

@@ -330,7 +330,7 @@ class Main(ABC):
         pass
 
     @abstractmethod
-    def _recv(self) -> 'str|None':
+    def _recv(self) -> bytes:
         """
         Receive the output of the command.
 
@@ -515,7 +515,7 @@ class Main(ABC):
 
         while self.isConnected() and checkTime():
             try:
-                recv = self._recv()
+                recv = self._recv().decode(self.charset)
                 if not recv:
                     self._debug_warning("Connection closed")
                     self.exit = 0
@@ -592,7 +592,7 @@ class Main(ABC):
 
         if self._get_session() in r:
             try:
-                recv = self._recv()
+                recv = self._recv().decode(self.charset)
                 if recv:
                     self.buffer += recv
                     sys.stdout.write(recv)
@@ -763,8 +763,8 @@ class SSH(Main):
     def _send(self, command: str):
         self._session.send(command)
 
-    def _recv(self) -> 'str|None':
-        return self._session.recv(65535).decode(self.charset)
+    def _recv(self) -> bytes:
+        return self._session.recv(65535)
 
 
 class Telnet(Main):
@@ -859,8 +859,8 @@ class Telnet(Main):
     def _send(self, command: str):
         self._conn.write(command)
 
-    def _recv(self) -> 'str|None':
-        return self._conn.read_eager().decode(self.charset)
+    def _recv(self) -> bytes:
+        return self._conn.read_eager()
 
     def _expect(self) -> 'str|None':
         more: list = self.more
@@ -962,8 +962,8 @@ class Socket(Main):
     def _send(self, command: str):
         self._conn.sendall(command)
 
-    def _recv(self) -> 'str|None':
-        return self._conn.recv(1024).decode(self.charset)
+    def _recv(self) -> bytes:
+        return self._conn.recv(1024)
 
     def _get_session(self):
         return self._conn
@@ -1045,9 +1045,8 @@ class Serial(Main):
         self._conn.write(command)
         self._conn.flush()
 
-    def _recv(self) -> 'str|None':
-        if self._conn.in_waiting:
-            return self._conn.read(self._conn.in_waiting).decode(self.charset)
+    def _recv(self) -> bytes:
+        return self._conn.read(self._conn.in_waiting) if self._conn.in_waiting else b''
 
     def close(self) -> bool:
         """
@@ -1082,7 +1081,7 @@ class Serial(Main):
         rlist = [sys.stdin]
         if self._conn.in_waiting:
             # Data available from serial port
-            recv = self._recv()
+            recv = self._recv().decode(self.charset)
             if recv:
                 self.buffer += recv
                 sys.stdout.write(recv)
@@ -1191,8 +1190,8 @@ class Spawn(Main):
         self._conn.write(command)
         # self._os.write(command)
 
-    def _recv(self) -> 'str|None':
-        return self._os.read(self._session, 4096).decode(self.charset)
+    def _recv(self) -> bytes:
+        return self._os.read(self._session, 4096)
 
     def close(self) -> bool:
         """

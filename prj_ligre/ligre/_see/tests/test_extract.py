@@ -40,7 +40,7 @@ def test():
     cfg = cfg()
     if not isinstance(cfg, dict) or key not in cfg:
         return
-
+    cfg=cfg[key]
     # ex.SSH.verbose = True
     ex.SSH.verbose = ex.DEBUG_ALL
     # ex.ret_dict = False
@@ -57,4 +57,4 @@ def test():
     o.show(ret)
 
 
-# test()
+test()
