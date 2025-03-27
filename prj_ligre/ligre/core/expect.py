@@ -47,26 +47,28 @@ class Main(ABC):
     """Charset used in decode"""
 
     _prompts = {
-        'linux': r'.*[\$#>] ?$',
-        'bash': r'.*[\$#>] ?$',  # bash TCL {\n(-bash.*|\[[^\]]+\])[$#] *$} }
-        # oracle TCL { set prompt {[\r\n](selection:|Save Changes \[y/n\]\?|((\e\[1m)?\*{1,2}(\e\[0m)?)?\w+(\([^\(\)]+\))?[>#])\s*} }
-        'oracle': r'.*[\$#>] ?$',
-        'juniper': r'.*[\$#>] ?$',  # TCL { set prompt {\n[^>]*> *$} }
-        'alteon': r'.*[\$#>] ?$',  # TCL { set prompt {>>[^#]*# *$} }
-        # cyclades TCL { set prompt {Select option ==> *$} }
-        'cyclades': r'.*[\$#>] ?$',
-        # cisco TCL { set prompt {\n[^>#]*[>#]( *\(enable\))? *$} }
-        'cisco': r'.*[\$#>] ?$',
-        'msc': r'.*[\$#>] ?$',  # TCL  set prompt {\n<|>} }
-        'itl_vsc': r'.*[\$#>] ?$',  # TCL { set prompt {\n.*\d<} }
-        # itl_nmm TCL { set prompt {\n(.*@.*:.*[$#] *|ITL>)$} }
-        'itl_nmm': r'.*[\$#>] ?$',
-        'hp': r'.*[\$#>] ?$',  # TCL  { set prompt {\n.*(>|\[Y/N\]:) *$} }
-        'huawei': r'.*[\$#>] ?$',  # TCL { set prompt {[\n\r]+<[^>]+> *$} }
-        # motorola TCL { set prompt {(#Enter Selection:|>) *$} }
-        'motorola': r'.*[\$#>] ?$',
-        # auto TCL { set prompt {[\n\r]+((-bash.*|\[[^\]]+\])[$#]|[^$>#]*([$>#]|\[Y/N\]:)( *\(enable\))?|>>[^#]*#|Select option ==>|#Enter Selection:) *$} }
-        'auto': r'.*[\$#>] ?$',
+        'hpux': r'\n(-bash.*|\[[^\]]+\])[$#] *$',
+        'unix': r'\n(-bash.*|\[[^\]]+\])[$#] *$',
+        'bash': r'\n(-bash.*|\[[^\]]+\])[$#] *$',
+        'linux': r'\n(-bash.*|\[[^\]]+\])[$#] *$',
+        'oracle': r'[\r\n](selection:|Save Changes \[y/n\]\?|((\e\[1m)?\*{1,2}(\e\[0m)?)?\w+(\([^\(\)]+\))?[>#])\s*',
+        'acme': r'[\r\n](selection:|Save Changes \[y/n\]\?|((\e\[1m)?\*{1,2}(\e\[0m)?)?\w+(\([^\(\)]+\))?[>#])\s*',
+        'nortel': r'\n[^>]*> *$',
+        'juniper': r'\n[^>]*> *$',
+        'alteon': r'>>[^#]*# *$',
+        'cyclades': r'Select option ==> *$',
+        'cisco': r'\n[^>#]*[>#]( *\(enable\))? *$',
+        'parks': r'\n[^>#]*[>#]( *\(enable\))? *$',
+        'vsc': r'\n.*\d<',
+        'msc': r'\n.{0,3}[<>]',
+        'msc2': r'[\r\n]+[<>]\s*',
+        'nmm': r'\n(.*@.*:.*[$#] *|ITL>)$',
+        '3com': r'\n.*(>|\[Y/N\]:) *$',
+        'hp': r'\n.*(>|\[Y/N\]:) *$',
+        'huawei': r'[\n\r]+<[^>]+> *$',
+        'motorola': r'(#Enter Selection:|>) *$',
+        'auto': r'[\n\r]+((-bash.*|\[[^\]]+\])[$#]|[^$>#]*([$>#]|\[Y/N\]:)( *\(enable\))?|>>[^#]*#|Select option ==>|#Enter Selection:) *$',
+        'simple': r'.*[\$#>] ?$',
     }
     """
     Collection of predefined command prompts for various systems.
@@ -171,8 +173,8 @@ class Main(ABC):
             return False
         if self.__first:
             self.buffer = ''
-            self.welcome = self._expect()
             self.__first = False
+            self.welcome = self._expect()
         if not command:
             return
         self.exit = 0
@@ -473,6 +475,7 @@ class Main(ABC):
         if not prompt:
             return True
         if re.search(prompt, self.buffer):
+            print(self.buffer)
             return self._stripPrompt()
         return False
 
@@ -512,7 +515,6 @@ class Main(ABC):
             if timeout == 0:
                 return True
             return (time.time() - start_time) < timeout
-
         while self.isConnected() and checkTime():
             try:
                 recv = self._recv().decode(self.charset)
@@ -525,11 +527,12 @@ class Main(ABC):
             except:
                 # self._error(2)
                 break
-            if self._checkPrompt() or self._checkMore(self.buffer):
+            if self._checkPrompt():
+                break
+            if self._checkMore(self.buffer):
                 break
             if self.sleep:
                 time.sleep(self.sleep)
-
         return self.buffer
 
     def isConnected(self) -> bool:

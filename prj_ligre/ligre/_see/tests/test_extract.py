@@ -16,6 +16,7 @@ from ligre.db import conn
 # print(res)
 # quit()
 
+
 def test():
     key = 'ZBHE04'
     if key == 'SDVBHE04':
@@ -26,6 +27,7 @@ def test():
             'exit1': 'exit',
             'exit2': 'exit',
         }
+        prompt = 'auto'
     elif key == 'ZBHE04':
         cmdsDict = {
             'mml': 'mml',
@@ -33,6 +35,7 @@ def test():
             'exit1': 'exit;',
             'exit2': 'exit',
         }
+        prompt = 'msc'
     else:
         return
 
@@ -40,11 +43,12 @@ def test():
     cfg = cfg()
     if not isinstance(cfg, dict) or key not in cfg:
         return
-    cfg=cfg[key]
+    cfg = cfg[key]
     # ex.SSH.verbose = True
-    ex.SSH.verbose = ex.DEBUG_ALL
+    # ex.SSH.verbose = ex.DEBUG_ALL
     # ex.ret_dict = False
-    o = ex.SSH(cfg['host'], cfg['user'], cfg['passwd'])
+    o = ex.SSH(cfg['host'], cfg['user'], cfg['passwd'], prompt=prompt)
+    # o.prompt = prompt
     ret = o(cmdsDict)
     # ret = o(list(cmdsDict.values()))
 
@@ -54,6 +58,7 @@ def test():
     # ret = o(['mml','ioexp;', 'exit;', 'exit',])
 
     print('### Welcome:', o.welcome, sep='\n')
+    print('-'*100)
     o.show(ret)
 
 
