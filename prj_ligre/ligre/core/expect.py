@@ -120,6 +120,7 @@ class Main(ABC):
         self.__more: list = []
         self.__first: bool = True
         self.__timeout: int = 10
+        self.__lastCmd: str = None
 
         self._conn = None
         """Conection of collect"""
@@ -364,6 +365,7 @@ class Main(ABC):
         """
         if command and type(command) == str and self.isConnected():
             self._debug_cmd(command)
+            self.__lastCmd = command
             self._send((command + self.lf).encode(self.charset))
             return True
         return False
@@ -475,7 +477,6 @@ class Main(ABC):
         if not prompt:
             return True
         if re.search(prompt, self.buffer):
-            print(self.buffer)
             return self._stripPrompt()
         return False
 
@@ -533,7 +534,11 @@ class Main(ABC):
                 break
             if self.sleep:
                 time.sleep(self.sleep)
-        return self.buffer
+        if self.__lastCmd is None:
+            return self.buffer
+
+        return re.sub(r'^'+re.escape(self.__lastCmd)+r'\s*',
+                      '', self.buffer)
 
     def isConnected(self) -> bool:
         """Check if connection is activated"""
