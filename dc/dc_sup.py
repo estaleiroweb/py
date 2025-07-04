@@ -384,10 +384,12 @@ class DC_SUP:
         
         if f'{ord_encam}'=='0':
             tg='tg_a'
-            self.capa[reg][tipoOrig]['sx_a'][sx_a]=sx_a
+            if sx_a:
+                self.capa[reg][tipoOrig]['sx_a'][sx_a]=sx_a
         elif f'{ord_encam}'=='$':
-            self.capa[reg][tipoOrig]['sx_b'][sx_a]=sx_a
             tg='tg_b'
+            if sx_a:
+                self.capa[reg][tipoOrig]['sx_b'][sx_a]=sx_a
         else: tg=''
         if not rotas: return ''
         # print(f'=====>{ord_encam},{idEncam},{sx_a},{tipoOrig},{reg}')
@@ -438,7 +440,7 @@ class DC_SUP:
     def __group_encam_data(self,df:pd.DataFrame):
         all_cols = df.columns.tolist()
         # Criar uma nova coluna para indicar se existe erro
-        df['Tem_Error'] = df['Error'].notna() & (df['Error'].str.strip() != '')
+        # df['Tem_Error'] = df['Error'].notna() & (df['Error'].str.strip() != '')
         
         # Definir as colunas-chave para agrupamento
         group_cols = [
@@ -446,7 +448,7 @@ class DC_SUP:
             'Traducao',
             'RN1',
             'Central Origem',
-            'Tem_Error'
+            'Error'
         ]
         
         # Colunas para aplicar distinct (excluindo as colunas-chave)
@@ -463,9 +465,9 @@ class DC_SUP:
         agg_dict = {}
         
         # Para colunas-chave, usar 'first' (já que serão únicas no grupo)
-        for col in group_cols:
-            if col != 'Tem_Error' and col in df.columns:
-                agg_dict[col] = 'first'
+        # for col in group_cols:
+        #     if col != 'Tem_Error' and col in df.columns:
+        #         agg_dict[col] = 'first'
         
         # Para demais colunas, aplicar distinct
         for col in colunas_distinct:
@@ -476,8 +478,8 @@ class DC_SUP:
         resultado = df.groupby(group_cols, as_index=False).agg(agg_dict)
         
         # Remover a coluna Tem_Error do resultado final (era apenas para agrupamento)
-        if 'Tem_Error' in resultado.columns:
-            resultado = resultado.drop('Tem_Error', axis=1)
+        # if 'Tem_Error' in resultado.columns:
+        #     resultado = resultado.drop('Tem_Error', axis=1)
 
         # Converter listas em strings, dá problema para converter para excel se não fizer
         # for col in resultado.columns:
@@ -746,7 +748,6 @@ class DC_SUP:
                 lines = max(lines, len(arr_str))
             if lines>1:
                 ws.row_dimensions[row[0].row].height = min(70,lines*16)
-    
     def __excel_fit_height_lines2(self,ws: Worksheet):
         for row in ws.iter_rows():
             altura_maxima = 15  # altura mínima
@@ -803,7 +804,7 @@ class DC_SUP:
 
         ws.add_table(tab)
         self.__excel_worksheet_wrap_text(ws)
-        self.__excel_worksheet_auto_size(ws)
+        self.__excel_worksheet_auto_width(ws)
 
     def __excel_worksheet_format(self,ws:Worksheet, df:pd.DataFrame):
         """
@@ -829,7 +830,7 @@ class DC_SUP:
             cell.alignment = center_alignment
         
         self.__excel_worksheet_wrap_text(ws)
-        self.__excel_worksheet_auto_size(ws)
+        self.__excel_worksheet_auto_width(ws)
         
     def __excel_worksheet_wrap_text(self,ws:Worksheet):
         # formatr com wrap_text
@@ -838,7 +839,7 @@ class DC_SUP:
             for cell in row:
                 cell.alignment = alignment
     
-    def __excel_worksheet_auto_size(self,ws:Worksheet):
+    def __excel_worksheet_auto_width(self,ws:Worksheet):
         # Ajustar largura das colunas
         for column in ws.columns:
             max_length = 0
@@ -846,11 +847,16 @@ class DC_SUP:
             
             for cell in column:
                 try:
-                    max_length = max(max_length,len(str(cell.value)))
+                    max_length = max(max_length,self.__get_cell_width(str(cell.value)))
                 except:
                     pass
             
             ws.column_dimensions[column_letter].width = min(max_length + 2, self.excel_max_width)
+    def __get_cell_width(self,text:str):
+        max_length=0
+        for l in text.splitlines():
+            max_length=max(max_length,len(l))
+        return max_length
 
     def __convert_to_excel(self,sheet:str,df:pd.DataFrame)->Worksheet|None:
         """
@@ -904,7 +910,7 @@ class DC_SUP:
             self.__level_item(f'close {text}','= ')
         
 if __name__ == "__main__":
-    DC_SUP.verbose=2
+    DC_SUP.verbose=0
     DC_SUP.base_dir=os.path.dirname(os.path.abspath(__file__))+'/sup/'
 
     if len(sys.argv)>1:
