@@ -1,6 +1,7 @@
 #!/bin/env python
 # /c/AppData/Code/venv/py/dc/dc_sup.py
 import os
+import sys
 import json
 import pandas as pd
 from openpyxl.workbook import Workbook
@@ -16,7 +17,8 @@ from openpyxl.cell.rich_text import TextBlock, CellRichText
 # from openpyxl.utils import get_column_letter
 # from openpyxl.styles import Font, PatternFill, Border, Side
 class DC_SUP:
-    verbose=1 # 0,1,2,3++
+    verbose=0 # 0,1,2,3++
+    base_dir:str='' # configurar
     access_n_olo_olny=True
     excel_max_width=180
     capa_tables={
@@ -61,56 +63,72 @@ class DC_SUP:
         },
     }
     
-    def __init__(self):
+    def __init__(self,dc:str):
+        self.dc=dc.lower()
         self.level=0
-        self.path=os.path.dirname(os.path.abspath(__file__))+'/sup' # substituir pelo base + dc_number
+        if not self.base_dir:
+            print(f'base_dir empty')
+            return
+
+        # substituir pelo base + dc_number
+        self.path=self.base_dir+self.dc+'/sup'
+        if not os.path.isdir(self.path):
+            print(f'Not found folder: {self.path}')
+            return
         
         self.sheets={
             'capa':{
                 'title':'CAPA',
-                'fn_format':self.excel_format_capa,
+                'fn_format':self.__excel_format_capa,
                 },
             'encam':{
                 'title':'SERVICOS',
-                'fn_format':self.excel_insert_table,
+                'fn_format':self.__excel_insert_table,
                 },
             'cgi':{
                 'title':'CELLS CS',
-                'fn_format':self.excel_insert_table,
+                'fn_format':self.__excel_insert_table,
                 },
         }
-        self.capa:dict[str,dict]={}
         
-        self.dc_sup=self.get_json_file(f"{self.path}/encam.json")
-        self.dict:dict[str,dict]=self.dc_sup['dict'] # self.get_json_file(f"{self.path}/data/dict-1.0.0.json")
+        file=f"{self.path}/encam.json"
+        if not os.path.isfile(file):
+            print(f'Not found file: {file}')
+            return
+        
+        self.dc_sup=self.__get_json_file(file)
+        self.dict:dict[str,dict]=self.dc_sup['dict'] # self.__get_json_file(f"{self.path}/data/dict-1.0.0.json")
+        self.dict['error']={int(k): v for k, v in self.dict['error'].items()}
+        
         self.header:dict[str,str|int]=self.dc_sup['header']
         self.data:dict[str,dict]=self.dc_sup['data']
         self.cgi:dict[str,dict[str,dict[str,dict[str,dict[str,dict[str,dict[str,dict[str,dict[str,dict[str,dict[str,dict[str,dict]]]]]]]]]]]]=self.data['cgi']
         self.encam:dict[str,dict[str,dict[str,dict[str,dict[str,dict]]]]]=self.dc_sup['forwarding']
 
+        self.capa:dict[str,dict]={}
         self.df:dict={} # Reg,[header,encam,cgi],pd.DataFrame
         
-        self.data_extract_encam()
-        self.data_extract_cgi() # f"{self.path}/data/cgi.json"
-        self.data_extract_capa()
+        self.__data_extract_encam()
+        self.__data_extract_cgi() # f"{self.path}/data/cgi.json"
+        self.__data_extract_capa()
         
         for reg in self.df:
-            self.wb = self.excel_create_workbook()
+            self.wb = self.__excel_create_workbook()
             for sheet in self.df[reg]:
                 df_item:pd.DataFrame=self.df[reg][sheet]
                 if not len(df_item):
-                    self.show(f"{reg}:{sheet}: Nenhum dado encontrado")
+                    self.__show(f"{reg}:{sheet}: Nenhum dado encontrado")
                     continue
 
                 title=self.sheets[sheet]['title']
                 fn_format=self.sheets[sheet]['fn_format']
-                ws=self.convert_to_excel(sheet,df_item)
+                ws=self.__convert_to_excel(sheet,df_item)
                 fn_format(title,ws)
-                # self.show_done(title,df_item)
+                # self.____show_done(title,df_item)
 
-            self.excel_save(f"{self.path}/dc_{reg}.xlsx")
+            self.__excel_save(f"{self.path}/dc_{reg}.xlsx")
 
-    def data_extract_capa(self):
+    def __data_extract_capa(self):
         data={}
         for idSup,sup_data in self.data['sup'].items():
             servico=sup_data['Servico']
@@ -156,31 +174,43 @@ class DC_SUP:
             for descr_key,descr_data in data[reg]['descr'].items():
                 data[reg]['descr'][descr_key]=f'{descr_key} ({",".join(descr_data.values())})'
             sx_a=''
+            sx_b=''
             tg_a=''
+            tg_b=''
             if self.capa.get(reg):
                 # SMP:(ZBHE04,ZBHE05,ZBSA05,ZCEM02,ZCEM03,ZRJO03,VSC1N,VSC2N)
                 # STFC:(ZBHE04,ZBHE05,ZBSA05,ZCEM02,ZCEM03,ZRJO03)
                 sx_a=[]
+                sx_b=[]
                 tg_a=[]
+                tg_b=[]
                 for tipoOrig,to_data in self.capa[reg].items():
                     if len(to_data['sx_a']):
                         sx_a.append(f"{tipoOrig}: ({",".join(to_data['sx_a'].values())})")
+                    if len(to_data['sx_b']):
+                        sx_b.append(f"{tipoOrig}: ({",".join(to_data['sx_b'].values())})")
                     if len(to_data['tg_a']):
                         tg_a.append(f"{tipoOrig}: ({",".join(to_data['tg_a'].values())})")
+                    if len(to_data['tg_b']):
+                        tg_b.append(f"{tipoOrig}: ({",".join(to_data['tg_b'].values())})")
                 sx_a='\n'.join(sx_a)
+                sx_b='\n'.join(sx_b)
                 tg_a='\n'.join(tg_a)
-            capa=self.build_capa_data(
+                tg_b='\n'.join(tg_b)
+            capa=self.__build_capa_data(
                 dc=self.header['dc'],
                 owner=self.header['Colaborador'],
                 dt=self.header['dt_ger'],
-                tg_a=tg_a,
                 sx_a=sx_a,
+                sx_b=sx_b,
+                tg_a=tg_a,
+                tg_b=tg_b,
                 action='\n'.join(data[reg]['acao'].values()),
                 descr='\n'.join(data[reg]['descr'].values()),
             )
             self.df[reg]['capa']=pd.DataFrame(capa)
     
-    def build_capa_data(self,dc:str='',owner:str='',dt:str='',tg_a:str='',sx_a:str='',tg_b:str='',sx_b:str='',action:str='',descr:str=''):
+    def __build_capa_data(self,dc:str='',owner:str='',dt:str='',tg_a:str='',sx_a:str='',tg_b:str='',sx_b:str='',action:str='',descr:str=''):
         capa=[]
         # Colunas A, B, C, D, E
         capa.append(['DOCUMENTO DE CONFIGURAÇÃO','','','',''])
@@ -202,40 +232,40 @@ class DC_SUP:
                 capa.append([k,v,'','',''])
         return capa
     
-    def data_extract_encam(self):
+    def __data_extract_encam(self):
         # dict[str,dict]
         # Origem,Abrangencia,Servico,Tipo Serv,Traducao,Formato OLO,Tipo TR,Tarifacao,RN2,ROP,AL,Central Origem,Central Destino,Rota Destino,Formato Envio,CN_a,Cod_CNL_a,CNL_a,AL_a,UF_a,Municipio_a,Obs
         if not self.encam: return
         
         data:dict[str,list] = {}
-        arr_error:dict=self.dict['error']
         
-        self.level_open(f'Encam')
+        self.__level_open(f'Encam')
         for sx_a, sx_b_data in self.encam.items():
-            self.level_open(f'SX_a: {sx_a}')
+            self.__level_open(f'SX_a: {sx_a}')
             for sx_b, rn1_data in sx_b_data.items():
-                self.level_open(f'SX_b: {sx_b}')
+                self.__level_open(f'SX_b: {sx_b}')
                 for rn1, rota_summary_data in rn1_data.items():
-                    self.level_open(f'RN1: {rn1}')
+                    self.__level_open(f'RN1: {rn1}')
                     for rota_summary, formato_summary_data in rota_summary_data.items():
-                        self.level_open(f'Rota Summary: {rota_summary}')
+                        self.__level_open(f'Rota Summary: {rota_summary}')
                         for formato_summary, traducao_data in formato_summary_data.items():
-                            self.level_open(f'Formato Summary: {formato_summary}')
-                            for idSup_Cod_CNL_a_idTipoOrig, erro_ord in traducao_data.items():
+                            self.__level_open(f'Formato Summary: {formato_summary}')
+                            for idSup_Cod_CNL_a_idTipoOrig, erro_ord_rotas in traducao_data.items():
                                 idSup,cod_cnl_a,idTipoOrig,idEncam=str(idSup_Cod_CNL_a_idTipoOrig).split(',')
                                 tipoOrig_data:dict=self.dict['tipo_orig'][idTipoOrig]
                                 tipoOrig=tipoOrig_data['TipoOrig']
-                                self.level_open(f'idSup: {idSup}, Cod_CNL_a: {cod_cnl_a}, TipoOrig: {idTipoOrig}-{tipoOrig}')
-                                error,ord_encam=erro_ord
+                                self.__level_open(f'idSup: {idSup}, Cod_CNL_a: {cod_cnl_a}, TipoOrig: {idTipoOrig}-{tipoOrig}')
+                                error,ord_encam,rotas=erro_ord_rotas
 
-                                if ord_encam==0: tipo_ord='Acesso'
+                                if ord_encam==0: 
+                                    tipo_ord='Acesso'
                                 elif ord_encam==-1: 
                                     tipo_ord='OLO'
                                     ord_encam='$'
                                 else:
                                     tipo_ord='Rotas Internas'
                                     if self.access_n_olo_olny: continue
-                                    
+                                
                                 sup_data:dict=self.data['sup'][idSup]
                                 servico=str(sup_data['Servico'])
                                 rn1_a=str(sup_data['RN1'])
@@ -248,20 +278,18 @@ class DC_SUP:
                                 TrType:str=sup_data[tipoOrig_data['TrType']]
                                 tarifacao=self.dict['tarifacao'][idTarifacao]['Tarif']
                                 tipo_tr:str=self.dict['tr_types'][TrType]
-                                self.level_item(f'Servico......: {servico}')
-                                self.level_item(f'RN1_a........: {rn1_a}-{olo}')
-                                self.level_item(f'Abrangencia..: {idAbrangencia}-{abrangencia}')
-                                self.level_item(f'TipoSrv......: {idTipoSrv}-{tipo_serv}')
-                                self.level_item(f'Tarifacao....: {idTarifacao}-{tarifacao}')
-                                self.level_item(f'TrType.......: {TrType}-{tipo_tr}')
-                                
-                                # orig_data:dict=self.data['orig'][idTipoOrig]
+                                self.__level_item(f'Servico......: {servico}')
+                                self.__level_item(f'RN1_a........: {rn1_a}-{olo}')
+                                self.__level_item(f'Abrangencia..: {idAbrangencia}-{abrangencia}')
+                                self.__level_item(f'TipoSrv......: {idTipoSrv}-{tipo_serv}')
+                                self.__level_item(f'Tarifacao....: {idTarifacao}-{tarifacao}')
+                                self.__level_item(f'TrType.......: {TrType}-{tipo_tr}')
                                 
                                 cnl_data=self.data['cnl'][cod_cnl_a]
                                 sigla_cnl_a=cnl_data['Sigla_CNL']
                                 municipio_a=cnl_data['Municipio']
                                 idAL_a=str(cnl_data['idAL'])
-                                self.level_item(f'CNL_a........: {sigla_cnl_a}-{municipio_a}')
+                                self.__level_item(f'CNL_a........: {sigla_cnl_a}-{municipio_a}')
                                 
                                 al_data_a=self.data['al'][idAL_a]
                                 al_a=al_data_a['AL']
@@ -269,7 +297,7 @@ class DC_SUP:
                                 cn_a=str(al_data_a['CN'])
                                 uf_a=al_data_a['UF']
                                 reg_a=al_data_a['Reg']
-                                self.level_item(f'AL_a.........: {idAL_a}-{al_a}/{uf_a}-{reg_a} ({cn_a}) ROP: {rop_a}')
+                                self.__level_item(f'AL_a.........: {idAL_a}-{al_a}/{uf_a}-{reg_a} ({cn_a}) ROP: {rop_a}')
                                     
                                 cn_b,idAL_b,idPortado,grp,traducao=sup_data['cnl'][cod_cnl_a][idTipoOrig]
                                 AbrCN,_idTipoOrig,idTipoDest,idACB,rn1_b=str(grp).split(',')
@@ -280,13 +308,17 @@ class DC_SUP:
                                 # cn_b=al_data_b['CN']
                                 uf_b=al_data_b['UF']
                                 reg_b=al_data_b['Reg']
-                                self.level_item(f'AL_b.........: {idAL_b}-{al_b}/{uf_b}-{reg_b} ({cn_b}) ROP: {rop_b}')
-
+                                self.__level_item(f'AL_b.........: {idAL_b}-{al_b}/{uf_b}-{reg_b} ({cn_b}) ROP: {rop_b}')
+                                
+                                # grp_encam_data:dict=self.data['grp_encam'][f'{cn_b}'][idAL_b][f'{idPortado}'][grp]
+                                # idOrigem,idCenario,idTrunkType=grp_encam_data['encam'][idEncam]
+                                # orig_data:dict=self.data['orig'][idTipoOrig]
+                                
                                 mark,error_str='',''
                                 if error: 
                                     mark='*'
-                                    error_str=f"ERROR: {error}-{arr_error[f'{error}']['desc']}"
-                                    self.level_item(error_str)
+                                    error_str=self.build_error(error)
+                                    self.__level_item(error_str)
                                 
                                 reg=reg_b # Regional de A ou de B?
                                 data_item={
@@ -311,85 +343,99 @@ class DC_SUP:
                                     'AL_a': al_a,
                                     'UF_a': uf_a,
                                     'Municipio_a': municipio_a,
-                                    'Obs': self.summary_trunks(ord_encam,idEncam,sx_a,tipoOrig,reg),
+                                    'Obs': self.__summary_trunks(sx_a,sx_b,ord_encam,idEncam,tipoOrig,rotas,reg),
                                     'Ord': f'{ord_encam} {tipo_ord}',
                                     'Error': error_str,
                                 }
 
                                 if not data.get(reg): data[reg]=[]
                                 data[reg].append(data_item)
-                                self.level_close('idSup')
-                            self.level_close('Formato Summary')
-                        self.level_close('Rota Summary')
-                    self.level_close('RN1')
-                self.level_close('SX_b')
-            self.level_close('SX_a')
-        self.level_close('Encam')
+                                self.__level_close('idSup')
+                            self.__level_close('Formato Summary')
+                        self.__level_close('Rota Summary')
+                    self.__level_close('RN1')
+                self.__level_close('SX_b')
+            self.__level_close('SX_a')
+        self.__level_close('Encam')
         
         for reg in data:
             if not self.df.get(reg):
                 self.df[reg]={}
             self.df[reg]['capa']={}
             data[reg]=pd.DataFrame(data[reg])
-            # self.show_done(f'{reg} Encam',data[reg])
-            data[reg]=self.group_encam_data(data[reg])
+            # self.____show_done(f'{reg} Encam',data[reg])
+            data[reg]=self.__group_encam_data(data[reg])
             data[reg]=data[reg].sort_values(by=['Origem', 'Central Destino'], ascending=[True, True])
 
-            self.show_done(f'{reg} Encam',data[reg])
+            self.____show_done(f'{reg} Encam',data[reg])
             self.df[reg]['encam']=data[reg]
     
-    def summary_trunks(self,ord_encam,idEncam,sx_a,tipoOrig,reg):
+    def __summary_trunks(self,sx_a,sx_b,ord_encam,idEncam,tipoOrig,rotas,reg):
         if not reg: return ''
         if not self.capa.get(reg):
             self.capa[reg]={}
         if not self.capa[reg].get(tipoOrig):
             self.capa[reg][tipoOrig]={
                 'sx_a':{},
+                'sx_b':{},
                 'tg_a':{},
+                'tg_b':{},
             }
-        if ord_encam=='0':
+        
+        if f'{ord_encam}'=='0':
+            tg='tg_a'
             self.capa[reg][tipoOrig]['sx_a'][sx_a]=sx_a
+        elif f'{ord_encam}'=='$':
+            self.capa[reg][tipoOrig]['sx_b'][sx_a]=sx_a
+            tg='tg_b'
+        else: tg=''
+        if not rotas: return ''
+        # print(f'=====>{ord_encam},{idEncam},{sx_a},{tipoOrig},{reg}')
+        # rotas_data=self.data['grafo'][idEncam]['rotas'][sx_a]
         
-        if not str(idEncam): return ''
-        rotas_data:dict=self.data['encam'].get(idEncam,{})
-        if not rotas_data: return ''
-        rotas_data:dict=rotas_data['rotas']
-        if not rotas_data: return ''
-        rotas_data:dict=rotas_data.get(sx_a,{})
-        # print(f'=====>{idEncam},{sx_a},{tipoOrig},{reg}: {rotas_data}')
-        if not rotas_data: return ''
-        
-        arr_rota_capa={}
+        rotas_data=rotas
         arr_obs=[]
         for id_encam_type, rotas_data_det in rotas_data.items():
-            self.level_open(f'encam.sx.id_encam_type: {idEncam}.{sx_a}.{id_encam_type}')
+            self.__level_open(f'encam.sx.id_encam_type: {idEncam}.{sx_a}.{id_encam_type}')
             arr_rota,arr_carga,arr_formato=[],[],[]
             for rota, arr_rota_det in rotas_data_det.items():
-                self.level_open(f'rota: {rota}')
+                self.__level_open(f'rota: {rota}')
                 if not rota: continue
-                carga=arr_rota_det[0]
-                formato=arr_rota_det[1]
-                if id_encam_type=='1':
-                    arr_rota_capa[rota]=rota
                 arr_rota.append(rota)
-                arr_carga.append(f'{carga}' if carga else '-')
-                arr_formato.append(f'{formato}' if formato else '-')
-                self.level_close('rota')
-            self.level_close('encam.sx.id_encam_type')
-            
-            arr_encam_type:dict=self.dict['encam_type'][id_encam_type]
-            encam_type:str=arr_encam_type['Quando']+(' Transbordo' if arr_encam_type['Transbordo'] else '')
+                
+                if tg and id_encam_type=='1':
+                    self.capa[reg][tipoOrig][tg][rota]=rota
+                
+                if arr_rota_det:
+                    carga=arr_rota_det[0]
+                    formato=arr_rota_det[1]
+                    arr_carga.append(f'{carga}' if carga else '-')
+                    arr_formato.append(f'{formato}' if formato else '-')
+                self.__level_close('rota')
+            self.__level_close('encam.sx.id_encam_type')
             
             # print([arr_rota,arr_carga,arr_formato])
-            arr_obs.append(f'- {encam_type}: {'/'.join(arr_rota)}({'/'.join(arr_carga)})[{';'.join(arr_formato)}]')
-        
-
-        self.capa[reg][tipoOrig]['sx_a'][sx_a]=sx_a
-        self.capa[reg][tipoOrig]['tg_a']|=arr_rota_capa
-        
+            if arr_rota:
+                arr_rota='/'.join(arr_rota)
+                if arr_carga:
+                    arr_rota+=f"({'/'.join(arr_carga)})"
+                if arr_formato:
+                    arr_rota+=f"[{','.join(arr_formato)}]"
+                
+                arr_encam_type:dict=self.dict['encam_type'][id_encam_type]
+                encam_type:str=arr_encam_type['Quando']+(' Transbordo' if arr_encam_type['Transbordo'] else '')
+                arr_obs.append(f'- {encam_type}: {arr_rota}')
         return ' \n'.join(arr_obs)
 
-    def group_encam_data(self,df:pd.DataFrame):
+    def build_error(self,error:int):
+        lst_error=[]
+        for err,data in self.dict['error'].items():
+            if err&error:
+                lst_error.append(f"{err}-{data['desc']}")
+        return f"ERROR: {', '.join(lst_error)}"
+        
+
+    def __group_encam_data(self,df:pd.DataFrame):
         all_cols = df.columns.tolist()
         # Criar uma nova coluna para indicar se existe erro
         df['Tem_Error'] = df['Error'].notna() & (df['Error'].str.strip() != '')
@@ -467,7 +513,7 @@ class DC_SUP:
         return resultado
         return df
 
-    def data_extract_cgi(self):
+    def __data_extract_cgi(self):
         """
         Extrai dados do JSON CGI em formato tabular
         
@@ -476,34 +522,36 @@ class DC_SUP:
         """
         if not self.cgi: return
         
-        self.level_open(f'CGI')
+        self.__level_open(f'CGI')
         for reg, sigla_cnl_data in self.cgi.items():
             data = []
-            self.level_open(f'reg: {reg}')
+            self.__level_open(f'reg: {reg}')
             for sigla_cnl, cnl_data in sigla_cnl_data.items():
-                self.level_open(f'sigla_cnl: {sigla_cnl}')
+                self.__level_open(f'sigla_cnl: {sigla_cnl}')
                 for cod_cnl_erb, ea_data in cnl_data.items():
-                    self.level_open(f'cod_cnl_erb: {cod_cnl_erb}')
+                    self.__level_open(f'cod_cnl_erb: {cod_cnl_erb}')
                     for ern, endid_data in ea_data.items():
-                        self.level_open(f'ern: {ern}')
+                        self.__level_open(f'ern: {ern}')
                         for g, cnl_data in endid_data.items():
-                            self.level_open(f'g: {g}')
+                            self.__level_open(f'g: {g}')
                             for ea, endid_data in cnl_data.items():
-                                self.level_open(f'ea: {ea}')
+                                self.__level_open(f'ea: {ea}')
                                 for endid, siteid_data in endid_data.items():
-                                    self.level_open(f'endid: {endid}')
+                                    self.__level_open(f'endid: {endid}')
                                     for siteid, cgi_data in siteid_data.items():
-                                        self.level_open(f'siteid: {siteid}')
+                                        self.__level_open(f'siteid: {siteid}')
                                         for cgi, celula_data in cgi_data.items():
-                                            self.level_open(f'cgi: {cgi}')
+                                            self.__level_open(f'cgi: {cgi}')
                                             for celula, ec_data in celula_data.items():
-                                                self.level_open(f'celula: {celula}')
+                                                self.__level_open(f'celula: {celula}')
                                                 for ec, erind_data in ec_data.items():
-                                                    self.level_open(f'ec: {ec}')
+                                                    self.__level_open(f'ec: {ec}')
+                                                    if isinstance(erind_data,list):
+                                                        erind_data=dict(enumerate(erind_data))
                                                     for erind, device_data in erind_data.items():
-                                                        self.level_open(f'erind: {erind}')
+                                                        self.__level_open(f'erind: {erind}')
                                                         for device_id, device_name in device_data.items():
-                                                            self.level_open(f'device_id: {device_id}={device_name}')
+                                                            self.__level_open(f'device_id: {device_id}={device_name}')
                                                             data.append({
                                                                 'Sigla_CNL': sigla_cnl,
                                                                 'Cod_cnl_ERB': cod_cnl_erb,
@@ -519,26 +567,26 @@ class DC_SUP:
                                                                 'idDevice': device_id,
                                                                 'Device': device_name
                                                             })
-                                                            self.level_close()
-                                                        self.level_close()
-                                                    self.level_close()
-                                                self.level_close('celula')
-                                            self.level_close('cgi')
-                                        self.level_close('siteid')
-                                    self.level_close('endid')
-                                self.level_close('ea')
-                            self.level_close('g')
-                        self.level_close('ern')
-                    self.level_close('cod_cnl_erb')
-                self.level_close('sigla_cnl')
-            self.level_close('reg')
+                                                            self.__level_close()
+                                                        self.__level_close()
+                                                    self.__level_close()
+                                                self.__level_close('celula')
+                                            self.__level_close('cgi')
+                                        self.__level_close('siteid')
+                                    self.__level_close('endid')
+                                self.__level_close('ea')
+                            self.__level_close('g')
+                        self.__level_close('ern')
+                    self.__level_close('cod_cnl_erb')
+                self.__level_close('sigla_cnl')
+            self.__level_close('reg')
             if not self.df.get(reg): self.df[reg]={}
-            data=self.group_cgi_data(pd.DataFrame(data))
-            self.show_done(f'{reg} Encam',data)
+            data=self.__group_cgi_data(pd.DataFrame(data))
+            self.____show_done(f'{reg} Encam',data)
             self.df[reg]['cgi']=data
-        self.level_close('CGI')
+        self.__level_close('CGI')
 
-    def group_cgi_data(self,df:pd.DataFrame):
+    def __group_cgi_data(self,df:pd.DataFrame):
         """
         Agrupa dados por CGI, G, Sigla_CNL, EC, ERN
         Concatena os dispositivos em uma única coluna
@@ -559,7 +607,7 @@ class DC_SUP:
         return grouped
 
 
-    def excel_format_capa(self,title:str, ws: Worksheet):
+    def __excel_format_capa(self,title:str, ws: Worksheet):
         ws.delete_rows(1)
         
         larguras = {
@@ -665,13 +713,13 @@ class DC_SUP:
             cell.alignment=alinhamento
 
         # 6. Ajustar altura das linhas para o conteúdo
-        self.excel_fit_height_lines(ws)
+        self.__excel_fit_height_lines(ws)
         # for row in ws.iter_rows():
         #     ws.row_dimensions[row[0].row].auto_size = True
         
         return ws
 
-    def excel_fit_height_lines(self,ws: Worksheet):
+    def __excel_fit_height_lines(self,ws: Worksheet):
         bold=InlineFont(b=True)
         normal=InlineFont(b=False)
         for row in ws.iter_rows():
@@ -699,7 +747,7 @@ class DC_SUP:
             if lines>1:
                 ws.row_dimensions[row[0].row].height = min(70,lines*16)
     
-    def excel_fit_height_lines2(self,ws: Worksheet):
+    def __excel_fit_height_lines2(self,ws: Worksheet):
         for row in ws.iter_rows():
             altura_maxima = 15  # altura mínima
             for cell in row:
@@ -713,7 +761,7 @@ class DC_SUP:
             
             ws.row_dimensions[row[0].row].height = altura_maxima
     
-    def excel_create_workbook(self)->Workbook:
+    def __excel_create_workbook(self)->Workbook:
         wb = Workbook()
         
         wb.properties.creator = "eVoice"
@@ -726,15 +774,15 @@ class DC_SUP:
         wb.remove(wb.active)
         return wb
         
-    def excel_save(self,excel_file):
+    def __excel_save(self,excel_file):
         try:
-            self.show(f"Salvar arquivo Excel: {excel_file}")
+            self.__show(f"Salvar arquivo Excel: {excel_file}")
             self.wb.save(excel_file)
-            self.show(f"- Criado com sucesso")
+            self.__show(f"- Criado com sucesso")
         except Exception as e:
             print('- '+str(e))
 
-    def excel_insert_table(self,title:str, ws: Worksheet):
+    def __excel_insert_table(self,title:str, ws: Worksheet):
         """
         Applies formatting to the Excel worksheet and converts the data range into an Excel Table.
 
@@ -754,10 +802,10 @@ class DC_SUP:
         tab.tableStyleInfo = style
 
         ws.add_table(tab)
-        self.excel_worksheet_wrap_text(ws)
-        self.excel_worksheet_auto_size(ws)
+        self.__excel_worksheet_wrap_text(ws)
+        self.__excel_worksheet_auto_size(ws)
 
-    def excel_worksheet_format(self,ws:Worksheet, df:pd.DataFrame):
+    def __excel_worksheet_format(self,ws:Worksheet, df:pd.DataFrame):
         """
         Aplica formatação ao worksheet Excel
         """
@@ -780,17 +828,17 @@ class DC_SUP:
             cell.font = header_font
             cell.alignment = center_alignment
         
-        self.excel_worksheet_wrap_text(ws)
-        self.excel_worksheet_auto_size(ws)
+        self.__excel_worksheet_wrap_text(ws)
+        self.__excel_worksheet_auto_size(ws)
         
-    def excel_worksheet_wrap_text(self,ws:Worksheet):
+    def __excel_worksheet_wrap_text(self,ws:Worksheet):
         # formatr com wrap_text
         alignment = Alignment(wrap_text=True, vertical='center')
         for row in ws.iter_rows():
             for cell in row:
                 cell.alignment = alignment
     
-    def excel_worksheet_auto_size(self,ws:Worksheet):
+    def __excel_worksheet_auto_size(self,ws:Worksheet):
         # Ajustar largura das colunas
         for column in ws.columns:
             max_length = 0
@@ -804,7 +852,7 @@ class DC_SUP:
             
             ws.column_dimensions[column_letter].width = min(max_length + 2, self.excel_max_width)
 
-    def convert_to_excel(self,sheet:str,df:pd.DataFrame)->Worksheet|None:
+    def __convert_to_excel(self,sheet:str,df:pd.DataFrame)->Worksheet|None:
         """
         Função para converter dict list[dict] para Excel
         """
@@ -815,7 +863,7 @@ class DC_SUP:
             ws_data.append(r)
         return ws_data
 
-    def show_done(self,title:str,df:pd.DataFrame):
+    def ____show_done(self,title:str,df:pd.DataFrame):
         if not self.verbose: return
         # print(f"Colunas incluídas: {list(df.columns)}")
         # print("Preview dos primeiros 5 registros:")
@@ -824,7 +872,7 @@ class DC_SUP:
         if c>5: print(f"...\nTotal de registros processados: {c}")
         print()
 
-    def get_json_file(self,file)->dict:
+    def __get_json_file(self,file)->dict:
         try:
             # Carregar dados JSON
             with open(file, 'r', encoding='utf-8') as file:
@@ -838,22 +886,40 @@ class DC_SUP:
             print(f"Erro inesperado: {str(e)}")
         return {}
 
-    def show(self,text):
+    def __show(self,text):
         if not self.verbose: return
         print(text)
-    def level_open(self,text):
-        self.level_item(text,'- ')
+    def __level_open(self,text):
+        self.__level_item(text,'- ')
         self.level+=1
-    def level_item(self,text,c=''):
+    def __level_item(self,text,c=''):
         if self.verbose<2 or self.level<0: return
         if self.verbose==2:
             print(f'{"":<{self.level*2}}{c}{text}')
         else:
             print(f'{"":<{self.level*2}}{c}[{self.level}]{text}')
-    def level_close(self,text=None):
+    def __level_close(self,text=None):
         self.level-=1
         if self.verbose>2:
-            self.level_item(f'close {text}','= ')
+            self.__level_item(f'close {text}','= ')
         
 if __name__ == "__main__":
-    DC_SUP()
+    DC_SUP.verbose=2
+    DC_SUP.base_dir=os.path.dirname(os.path.abspath(__file__))+'/sup/'
+
+    if len(sys.argv)>1:
+        for dc in sys.argv[1:]:
+            print(f'### DC: {dc.upper()}')
+            DC_SUP(dc)
+    else:
+        try:
+            files = os.listdir(DC_SUP.base_dir)
+            for dc in files:
+                if os.path.isdir(DC_SUP.base_dir+'/'+dc):
+                    print(f'### DC: {dc.upper()}')
+                    DC_SUP(dc)
+        except FileNotFoundError:
+            print("Not Found Folder")
+        except PermissionError:
+            print("Permition denied")
+        
