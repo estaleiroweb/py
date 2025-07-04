@@ -17,6 +17,7 @@ from openpyxl.cell.rich_text import TextBlock, CellRichText
 # from openpyxl.styles import Font, PatternFill, Border, Side
 class DC_SUP:
     verbose=0
+    excel_max_width=180
     capa_tables={
         'CONTROLE DE VERSÃO':{
             'Versão':'Alteração',
@@ -104,12 +105,15 @@ class DC_SUP:
         for idSup,sup_data in self.encam_dict['data']['sup'].items():
             servico=sup_data['Servico']
             servico_descr=sup_data['Servico_Descricao']
-            idTipoSrv=sup_data['idTipoSrv']
-            servico_tipo=self.dc_dict['tipo_serv'][f'{idTipoSrv}']['TipoSrv']
-            idAbrangencia=sup_data['idAbrangencia']
-            abrangencia=self.dc_dict['abrangencia'][f'{idAbrangencia}']['Abrangencia']
-            olo=sup_data['OLO']
+            idTipoSrv=str(sup_data['idTipoSrv'])
+            servico_tipo=self.dc_dict['tipo_serv'][idTipoSrv]['TipoSrv']
+            idAbrangencia=str(sup_data['idAbrangencia'])
+            abrangencia=self.dc_dict['abrangencia'][idAbrangencia]['Abrangencia']
             rn1=sup_data['RN1']
+            olo=self.encam_dict['data']['rn1'][f'{rn1}']['Prestadora']
+            # olo=self.dc_dict['rn1'][f'{rn1}']['OLO']
+            # rn1_grp=self.dc_dict['rn1'][f'{rn1}']['RN1_Grp']
+            # cnpj=self.dc_dict['rn1'][f'{rn1}']['CNPJ']
             
             action_key=f'Abertura de {servico_tipo} {servico}: {olo} ({rn1})'
             descr_key=f'{servico_tipo} {servico}: {abrangencia}' # (CNLs)
@@ -117,9 +121,11 @@ class DC_SUP:
                 cnl_data=self.encam_dict['data']['cnl'][f'{cod_cnl}']
                 sigla_cnl=cnl_data['Sigla_CNL']
                 # municipio=cnl_data['Municipio']
-                idAL=cnl_data['idAL']
-                al_data=self.encam_dict['data']['al'][f'{idAL}']
+                idAL=str(cnl_data['idAL'])
+                al_data=self.encam_dict['data']['al'][idAL]
                 reg=al_data['Reg']
+                uf=al_data['UF']
+                cn=str(al_data['CN'])
                 if not data.get(reg):
                     data[reg]={
                         'acao':{}, # Abertura de SE 190:OI S.A. - EM RECUPERACAO JUDICIAL
@@ -128,7 +134,12 @@ class DC_SUP:
                 if not data[reg]['descr'].get(descr_key):
                     data[reg]['descr'][descr_key]={}
                 data[reg]['acao'][action_key]=action_key
-                data[reg]['descr'][descr_key][sigla_cnl]=sigla_cnl
+                if idAbrangencia=="3": # Estadual
+                    data[reg]['descr'][descr_key][uf]=uf
+                elif idAbrangencia=="6": # CN
+                    data[reg]['descr'][descr_key][cn]=cn
+                elif idAbrangencia!="4": # Nacional
+                    data[reg]['descr'][descr_key][sigla_cnl]=sigla_cnl
         
         for reg in data:
             for descr_key,descr_data in data[reg]['descr'].items():
@@ -147,7 +158,7 @@ class DC_SUP:
                         tg_a.append(f"{tipoOrig}: ({",".join(to_data['tg_a'].values())})")
                 sx_a='\n'.join(sx_a)
                 tg_a='\n'.join(tg_a)
-            capa=self.build_capa(
+            capa=self.build_capa_data(
                 dc=self.encam_dict['header']['dc'],
                 owner=self.encam_dict['header']['Colaborador'],
                 dt=self.encam_dict['header']['dt_ger'],
@@ -158,7 +169,7 @@ class DC_SUP:
             )
             self.df[reg]['capa']=pd.DataFrame(capa)
     
-    def build_capa(self,dc:str='',owner:str='',dt:str='',tg_a:str='',sx_a:str='',tg_b:str='',sx_b:str='',action:str='',descr:str=''):
+    def build_capa_data(self,dc:str='',owner:str='',dt:str='',tg_a:str='',sx_a:str='',tg_b:str='',sx_b:str='',action:str='',descr:str=''):
         capa=[]
         # Colunas A, B, C, D, E
         capa.append(['DOCUMENTO DE CONFIGURAÇÃO','','','',''])
@@ -208,10 +219,7 @@ class DC_SUP:
                                     tipo_ord='Rotas Internas'
                                     continue
                                 
-                                # print(encam_data.keys()); print('-'*80)
                                 arr_obs=[]
-                                # arr_obs.append(f'# {encam_data['ord']} {tipo_ord}')
-                                
                                 error=encam_data['error']
                                 mark,error_str='',''
                                 if error: 
@@ -225,6 +233,7 @@ class DC_SUP:
                                 # trunk_type_data:dict=encam_data['trunk_type']
                                 rotas_data:dict[str,dict]=encam_data['rotas']
                                 local_data:dict[str,dict]=encam_data['local']
+                                arr_al_b:dict[str,dict]=encam_data['al_b']
                                 
                                 arr_rota_capa={}
                                 if rotas_data:
@@ -245,7 +254,7 @@ class DC_SUP:
                                         self.level_close('id_encam_type')
                                         
                                         arr_encam_type:dict=self.dc_dict['encam_type'][id_encam_type]
-                                        encam_type:str=arr_encam_type['Quando']+(' Transbordo' if arr_encam_type['Transbordo'] else ' Atual')
+                                        encam_type:str=arr_encam_type['Quando']+(' Transbordo' if arr_encam_type['Transbordo'] else ' Normal')
                                         # print([arr_rota,arr_carga,arr_formato])
                                         arr_obs.append(f'- {encam_type}: {'/'.join(arr_rota)}({'/'.join(arr_carga)})[{';'.join(arr_formato)}]')
                                 obs:str=' \n'.join(arr_obs)
@@ -254,87 +263,163 @@ class DC_SUP:
                                     self.level_open(f'idSup[{idSup}]: servico {servico}')
                                     sup:dict=self.encam_dict['data']['sup'][idSup]
 
-                                    idAbrangencia:int=sup['idAbrangencia']
-                                    idTipoSrv:int=sup['idTipoSrv']
-                                    abrangencia:str=self.dc_dict['abrangencia'][f'{idAbrangencia}']['Abrangencia']
-                                    tipo_serv:str=self.dc_dict['tipo_serv'][f'{idTipoSrv}']['TipoSrv']
+                                    idAbrangencia=str(sup['idAbrangencia'])
+                                    idTipoSrv=str(sup['idTipoSrv'])
+                                    abrangencia:str=self.dc_dict['abrangencia'][idAbrangencia]['Abrangencia']
+                                    tipo_serv:str=self.dc_dict['tipo_serv'][idTipoSrv]['TipoSrv']
+                                    
+                                    arr_sup_cnl:dict=sup['cnl']
                                     
                                     self.evel_item(f'idAbrangencia: {idAbrangencia}-{abrangencia}')
                                     self.evel_item(f'idTipoSrv....: {idTipoSrv}-{tipo_serv}')
                                     
-                                    for idTipoOrig, tipoOrig in orig_data.items():
-                                        self.level_open(f'tipoOrig[{idTipoOrig}]: {tipoOrig}')
-                                        arr_tipoOrig:dict=self.dc_dict['tipo_orig'][idTipoOrig]
-                                        TrType:str=sup[arr_tipoOrig['TrType']]
-                                        idTarifacao:int=sup[arr_tipoOrig['idTarifacao']]
-                                        tarifacao=self.dc_dict['tarifacao'][f'{idTarifacao}']['Tarif']
-                                        tipo_tr:str=self.dc_dict['tr_types'][TrType]
-                                        self.evel_item(f'idTarifacao: {idTarifacao}-{tarifacao}')
-                                        self.evel_item(f'TrType.....: {TrType}-{tipo_tr}')
+                                    # Localidades Ponta A
+                                    for cod_cnl_a,idTipoOrig_data in arr_sup_cnl.items():
+                                        self.level_open(f'Cod_CNL_a[{cod_cnl_a}]: {cod_cnl_a}')
+                                        cnl_data=self.encam_dict['data']['cnl'][cod_cnl_a]
+                                        sigla_cnl_a=cnl_data['Sigla_CNL']
+                                        municipio_a=cnl_data['Municipio']
+                                        idAL_a=str(cnl_data['idAL'])
+                                        al_data=self.encam_dict['data']['al'][idAL_a]
+                                        al_a=al_data['AL']
+                                        rop_a=al_data['ROP']
+                                        cn_a=al_data['CN']
+                                        uf_a=al_data['UF']
+                                        reg_a=al_data['Reg']
                                         
-                                        for reg, uf_data in local_data.items():
-                                            self.level_open(f'Reg: {reg}')
-                                            if not self.capa.get(reg):
-                                                self.capa[reg]={}
-                                            if not self.capa[reg].get(tipoOrig):
-                                                self.capa[reg][tipoOrig]={
-                                                    'sx_a':{},
-                                                    'tg_a':{},
+
+                                        for idTipoOrig,arr_idTipoOrig in idTipoOrig_data.items():
+                                            if idTipoOrig in orig_data:
+                                                cn_b, idAL_b, rn1_b, idPortado, grp, _traducao = arr_idTipoOrig
+                                                reg_b, uf_b, cn_b, al_b, rop_b =arr_al_b[f'{idAL_b}']
+                                                arr_tipoOrig:dict=self.dc_dict['tipo_orig'][idTipoOrig]
+                                                tipoOrig=arr_tipoOrig['TipoOrig']
+                                                self.level_open(f'tipoOrig[{idTipoOrig}]: {tipoOrig}')
+                                                
+                                                TrType:str=sup[arr_tipoOrig['TrType']]
+                                                idTarifacao=str(sup[arr_tipoOrig['idTarifacao']])
+                                                tarifacao=self.dc_dict['tarifacao'][idTarifacao]['Tarif']
+                                                tipo_tr:str=self.dc_dict['tr_types'][TrType]
+                                                self.evel_item(f'idTarifacao: {idTarifacao}-{tarifacao}')
+                                                self.evel_item(f'TrType.....: {TrType}-{tipo_tr}')
+                                                
+                                                data_item={
+                                                    'Origem': mark+tipoOrig,
+                                                    'Abrangencia': abrangencia, # arr_abrangencia
+                                                    'Servico': servico,
+                                                    'Tipo Serv': tipo_serv,
+                                                    'Traducao': traducao,
+                                                    'Formato OLO': TrType,
+                                                    'Tipo TR': tipo_tr,
+                                                    'Tarifacao': tarifacao,
+                                                    'RN1': f'{rn1_b}',
+                                                    'ROP': f'{rop_b}',
+                                                    'AL': al_b,
+                                                    'Central Origem': sx_a,
+                                                    'Central Destino': sx_b,
+                                                    'Rota Destino': rota_summary,
+                                                    'Formato Envio': formato_summary,
+                                                    'CN_a': f'{cn_a}',
+                                                    'Cod_CNL_a': f'{cod_cnl_a}',
+                                                    'CNL_a': sigla_cnl_a,
+                                                    'AL_a': al_a,
+                                                    'UF_a': uf_a,
+                                                    'Municipio_a': municipio_a,
+                                                    'Obs': obs,
+                                                    'Ord': f'# {encam_data['ord']} {tipo_ord}',
+                                                    'Error': error_str,
                                                 }
+                                                reg=reg_b # Regional de A ou de B?
+                                                if not self.capa.get(reg):
+                                                    self.capa[reg]={}
+                                                if not self.capa[reg].get(tipoOrig):
+                                                    self.capa[reg][tipoOrig]={
+                                                        'sx_a':{},
+                                                        'tg_a':{},
+                                                    }
+                                                if not data.get(reg): data[reg]=[]
+                                                
+                                                data[reg].append(data_item)
+                                                self.capa[reg][tipoOrig]['sx_a'][sx_a]=sx_a
+                                                self.capa[reg][tipoOrig]['tg_a']|=arr_rota_capa
+                                                self.level_close('tipoOrig')
+                                        self.level_close('Cod_CNL_a')
+                                    
+                                    # Outra Abordagem Depreciada
+                                    # for idTipoOrig, tipoOrig in orig_data.items():
+                                        # self.level_open(f'tipoOrig[{idTipoOrig}]: {tipoOrig}')
+                                        # arr_tipoOrig:dict=self.dc_dict['tipo_orig'][idTipoOrig]
+                                        # TrType:str=sup[arr_tipoOrig['TrType']]
+                                        # idTarifacao=str(sup[arr_tipoOrig['idTarifacao']])
+                                        # tarifacao=self.dc_dict['tarifacao'][idTarifacao]['Tarif']
+                                        # tipo_tr:str=self.dc_dict['tr_types'][TrType]
+                                        # self.evel_item(f'idTarifacao: {idTarifacao}-{tarifacao}')
+                                        # self.evel_item(f'TrType.....: {TrType}-{tipo_tr}')
+                                        
+                                        
+                                        # for reg, uf_data in local_data.items():
+                                            # self.level_open(f'Reg: {reg}')
+                                            # if not self.capa.get(reg):
+                                            #     self.capa[reg]={}
+                                            # if not self.capa[reg].get(tipoOrig):
+                                            #     self.capa[reg][tipoOrig]={
+                                            #         'sx_a':{},
+                                            #         'tg_a':{},
+                                            #     }
                                             
-                                            self.capa[reg][tipoOrig]['sx_a'][sx_a]=sx_a
-                                            self.capa[reg][tipoOrig]['tg_a']|=arr_rota_capa
-                                            arr_uf,arr_cn,arr_al,arr_rop,arr_cnl,arr_cod_cnl,arr_ct={},{},{},{},{},{},{}
-                                            for uf, cn_data in uf_data.items():
-                                                self.level_open(f'UF: {uf}')
-                                                arr_uf[uf]=uf
-                                                for cn, al_data in cn_data.items():
-                                                    self.level_open(f'CN: {cn}')
-                                                    arr_cn[cn]=f'{cn}'
-                                                    for idAL, idAL_data in al_data.items():
-                                                        self.level_open(f'idAL: {idAL}-{idAL_data["AL"]}')
-                                                        arr_al[idAL]=idAL_data["AL"]
-                                                        arr_rop[idAL]=f'{idAL_data["ROP"]}'
-                                                        for cod_cnl, Sigla_CNL in idAL_data['CNL'].items():
-                                                            self.level_open(f'Cod_CNL: {cod_cnl}')
-                                                            arr_cod_cnl[cod_cnl]=f'{cod_cnl}'
-                                                            arr_cnl[cod_cnl]=Sigla_CNL
-                                                            arr_ct[cod_cnl]=f'{self.encam_dict["data"]["cnl"][cod_cnl]["Municipio"]}'
-                                                            self.level_close('Cod_CNL')
-                                                        self.level_close('idAL')
-                                                    self.level_close('CN')
-                                                self.level_close('UF')
-                                            data_item={
-                                                'Origem': mark+tipoOrig,
-                                                'Abrangencia': abrangencia, # arr_abrangencia
-                                                'Servico': servico,
-                                                'Tipo Serv': tipo_serv,
-                                                'Traducao': traducao,
-                                                'Formato OLO': TrType,
-                                                'Tipo TR': tipo_tr,
-                                                'Tarifacao': tarifacao,
-                                                'RN1': rn1,
-                                                'ROP': ','.join(arr_rop.values()),
-                                                'AL': ','.join(arr_al.values()),
-                                                'Central Origem': sx_a,
-                                                'Central Destino': sx_b,
-                                                'Rota Destino': rota_summary,
-                                                'Formato Envio': formato_summary,
-                                                'CN_a': ','.join(arr_cn.values()),
-                                                'Cod_CNL_a': ','.join(arr_cod_cnl.values()),
-                                                'CNL_a': ','.join(arr_cnl.values()),
-                                                'AL_a': ','.join(arr_al.values()), # avaliar se é A ou B
-                                                'UF_a': ','.join(arr_uf.values()),
-                                                'Municipio_a': ','.join(arr_ct.values()),
-                                                'Ord': f'# {encam_data['ord']} {tipo_ord}',
-                                                'Error': error_str,
-                                                'Obs': obs,
-                                            }
-                                            # ,,,,,
-                                            if not data.get(reg): data[reg]=[]
-                                            data[reg].append(data_item)
-                                            self.level_close('Reg')
-                                        self.level_close('tipoOrig')
+                                            # self.capa[reg][tipoOrig]['sx_a'][sx_a]=sx_a
+                                            # self.capa[reg][tipoOrig]['tg_a']|=arr_rota_capa
+                                            # arr_uf,arr_cn,arr_al,arr_rop,arr_cnl,arr_cod_cnl,arr_ct={},{},{},{},{},{},{}
+                                            # for uf, cn_data in uf_data.items():
+                                            #     self.level_open(f'UF: {uf}')
+                                            #     arr_uf[uf]=uf
+                                            #     for cn, al_data in cn_data.items():
+                                            #         self.level_open(f'CN: {cn}')
+                                            #         arr_cn[cn]=f'{cn}'
+                                            #         for idAL, idAL_data in al_data.items():
+                                            #             self.level_open(f'idAL: {idAL}-{idAL_data["AL"]}')
+                                            #             arr_al[idAL]=idAL_data["AL"]
+                                            #             arr_rop[idAL]=f'{idAL_data["ROP"]}'
+                                            #             for cod_cnl, Sigla_CNL in idAL_data['CNL'].items():
+                                            #                 self.level_open(f'Cod_CNL: {cod_cnl}')
+                                            #                 arr_cod_cnl[cod_cnl]=f'{cod_cnl}'
+                                            #                 arr_cnl[cod_cnl]=Sigla_CNL
+                                            #                 arr_ct[cod_cnl]=f'{self.encam_dict["data"]["cnl"][cod_cnl]["Municipio"]}'
+                                            #                 self.level_close('Cod_CNL')
+                                            #             self.level_close('idAL')
+                                            #         self.level_close('CN')
+                                            #     self.level_close('UF')
+                                            # data_item={
+                                            #     'Origem': mark+tipoOrig,
+                                            #     'Abrangencia': abrangencia, # arr_abrangencia
+                                            #     'Servico': servico,
+                                            #     'Tipo Serv': tipo_serv,
+                                            #     'Traducao': traducao,
+                                            #     'Formato OLO': TrType,
+                                            #     'Tipo TR': tipo_tr,
+                                            #     'Tarifacao': tarifacao,
+                                            #     'RN1': rn1,
+                                            #     'ROP': ','.join(arr_rop.values()),
+                                            #     'AL': ','.join(arr_al.values()),
+                                            #     'Central Origem': sx_a,
+                                            #     'Central Destino': sx_b,
+                                            #     'Rota Destino': rota_summary,
+                                            #     'Formato Envio': formato_summary,
+                                            #     'CN_a': ','.join(arr_cn.values()),
+                                            #     'Cod_CNL_a': ','.join(arr_cod_cnl.values()),
+                                            #     'CNL_a': ','.join(arr_cnl.values()),
+                                            #     'AL_a': ','.join(arr_al.values()), # avaliar se é A ou B
+                                            #     'UF_a': ','.join(arr_uf.values()),
+                                            #     'Municipio_a': ','.join(arr_ct.values()),
+                                            #     'Obs': obs,
+                                            #     'Ord': f'# {encam_data['ord']} {tipo_ord}',
+                                            #     'Error': error_str,
+                                            # }
+                                            # # ,,,,,
+                                            # if not data.get(reg): data[reg]=[]
+                                            # data[reg].append(data_item)
+                                            # self.level_close('Reg')
+                                        # self.level_close('tipoOrig')
                                     self.level_close('idSup')
                                 self.level_close('traducao')
                             self.level_close('formato_summary')
@@ -343,15 +428,96 @@ class DC_SUP:
                 self.level_close('sx_b')
             self.level_close('sx_a')
         self.level_close('Encam')
+        
         for reg in data:
             if not self.df.get(reg):
                 self.df[reg]={}
             self.df[reg]['capa']={}
-            data[reg]=self.group_encam_data(pd.DataFrame(data[reg]))
-            data[reg] = data[reg].sort_values(by=['Origem', 'Central Destino'], ascending=[True, True])
+            data[reg]=pd.DataFrame(data[reg])
+            # self.show_done(f'{reg} Encam',data[reg])
+            data[reg]=self.group_encam_data(data[reg])
+            data[reg]=data[reg].sort_values(by=['Origem', 'Central Destino'], ascending=[True, True])
 
             self.show_done(f'{reg} Encam',data[reg])
             self.df[reg]['encam']=data[reg]
+
+    def group_encam_data(self,df:pd.DataFrame):
+        all_cols = df.columns.tolist()
+        # Criar uma nova coluna para indicar se existe erro
+        df['Tem_Error'] = df['Error'].notna() & (df['Error'].str.strip() != '')
+        
+        # Definir as colunas-chave para agrupamento
+        group_cols = [
+            'Servico',
+            'Traducao',
+            'RN1',
+            'Central Origem',
+            'Tem_Error'
+        ]
+        
+        # Colunas para aplicar distinct (excluindo as colunas-chave)
+        colunas_distinct = [col for col in all_cols if col not in group_cols]
+        
+        def aplicar_distinct(series):
+            """Função para obter valores distintos de uma série, removendo valores nulos"""
+            valores_unicos = series.dropna().unique()
+            # Remove strings vazias
+            valores_unicos = [v for v in valores_unicos if str(v).strip() != '']
+            return ';\n'.join(list(valores_unicos)) if len(valores_unicos) > 0 else ''
+        
+        # Criar dicionário de agregação
+        agg_dict = {}
+        
+        # Para colunas-chave, usar 'first' (já que serão únicas no grupo)
+        for col in group_cols:
+            if col != 'Tem_Error' and col in df.columns:
+                agg_dict[col] = 'first'
+        
+        # Para demais colunas, aplicar distinct
+        for col in colunas_distinct:
+            if col in df.columns:
+                agg_dict[col] = aplicar_distinct
+        
+        # Realizar o agrupamento
+        resultado = df.groupby(group_cols, as_index=False).agg(agg_dict)
+        
+        # Remover a coluna Tem_Error do resultado final (era apenas para agrupamento)
+        if 'Tem_Error' in resultado.columns:
+            resultado = resultado.drop('Tem_Error', axis=1)
+
+        # Converter listas em strings, dá problema para converter para excel se não fizer
+        # for col in resultado.columns:
+        #     if resultado[col].dtype == 'object':
+        #         resultado[col] = resultado[col].apply(
+        #             lambda x: '; '.join(map(str, x)) if isinstance(x, list) else str(x)
+        #         )
+        
+        def concatenar_colunas_se_nao_vazio(row):
+            valores = []
+            if pd.notna(row['Ord']) and str(row['Ord']).strip():
+                valores.append(str(row['Ord']).strip())
+            if pd.notna(row['Error']) and str(row['Error']).strip():
+                valores.append(str(row['Error']).strip())
+            if pd.notna(row['Obs']) and str(row['Obs']).strip():
+                valores.append(str(row['Obs']).strip())
+            return '\n'.join(valores)
+
+        # concatenar Ord+Error+Obs=Obs
+        # resultado['Obs'] = resultado.apply(concatenar_colunas_se_nao_vazio, axis=1)
+        # resultado = resultado[ [
+        #     'Origem', 'Abrangencia', 'Servico', 'Tipo Serv', 'Traducao', 
+        #     'Formato OLO', 'Tipo TR', 'Tarifacao', 'RN1', 'ROP', 'AL', 
+        #     'Central Origem', 'Central Destino', 'Rota Destino', 'Formato Envio',
+        #     'CN_a', 'Cod_CNL_a', 'CNL_a', 'AL_a', 'UF_a', 'Municipio_a', 
+        #     'Obs'
+        # ] ]
+        resultado = resultado[all_cols]
+        
+        # resultado = resultado.drop('Ord', axis=1)
+        # resultado = resultado.drop('Error', axis=1)
+        
+        return resultado
+        return df
 
     def data_extract_cgi(self,file:str):
         """
@@ -446,84 +612,6 @@ class DC_SUP:
         
         return grouped
 
-    def group_encam_data(self,df:pd.DataFrame):
-        # Criar uma nova coluna para indicar se existe erro
-        df['Tem_Error'] = df['Error'].notna() & (df['Error'].str.strip() != '')
-        
-        # Definir as colunas-chave para agrupamento
-        group_cols = [
-            'Servico',
-            'Traducao',
-            'RN1',
-            'Central Origem',
-            'Tem_Error'
-        ]
-        
-        # Definir as colunas para aplicar distinct (todas exceto as chaves)
-        final_cols = [
-            'Origem', 'Abrangencia', 'Servico', 'Tipo Serv', 'Traducao', 
-            'Formato OLO', 'Tipo TR', 'Tarifacao', 'RN1', 'ROP', 'AL', 
-            'Central Origem', 'Central Destino', 'Rota Destino', 'Formato Envio',
-            'CN_a', 'Cod_CNL_a', 'CNL_a', 'AL_a', 'UF_a', 'Municipio_a', 
-            'Obs'
-        ]
-        all_cols = final_cols+['Ord', 'Error']
-        
-        # Colunas para aplicar distinct (excluindo as colunas-chave)
-        colunas_distinct = [col for col in all_cols if col not in group_cols]
-        
-        def aplicar_distinct(series):
-            """Função para obter valores distintos de uma série, removendo valores nulos"""
-            valores_unicos = series.dropna().unique()
-            # Remove strings vazias
-            valores_unicos = [v for v in valores_unicos if str(v).strip() != '']
-            return ';\n'.join(list(valores_unicos)) if len(valores_unicos) > 0 else ''
-        
-        # Criar dicionário de agregação
-        agg_dict = {}
-        
-        # Para colunas-chave, usar 'first' (já que serão únicas no grupo)
-        for col in group_cols:
-            if col != 'Tem_Error' and col in df.columns:
-                agg_dict[col] = 'first'
-        
-        # Para demais colunas, aplicar distinct
-        for col in colunas_distinct:
-            if col in df.columns:
-                agg_dict[col] = aplicar_distinct
-        
-        # Realizar o agrupamento
-        resultado = df.groupby(group_cols, as_index=False).agg(agg_dict)
-        
-        # Remover a coluna Tem_Error do resultado final (era apenas para agrupamento)
-        if 'Tem_Error' in resultado.columns:
-            resultado = resultado.drop('Tem_Error', axis=1)
-
-        # Converter listas em strings, dá problema para converter para excel se não fizer
-        # for col in resultado.columns:
-        #     if resultado[col].dtype == 'object':
-        #         resultado[col] = resultado[col].apply(
-        #             lambda x: '; '.join(map(str, x)) if isinstance(x, list) else str(x)
-        #         )
-        
-        def concatenar_colunas_se_nao_vazio(row):
-            valores = []
-            if pd.notna(row['Ord']) and str(row['Ord']).strip():
-                valores.append(str(row['Ord']).strip())
-            if pd.notna(row['Error']) and str(row['Error']).strip():
-                valores.append(str(row['Error']).strip())
-            if pd.notna(row['Obs']) and str(row['Obs']).strip():
-                valores.append(str(row['Obs']).strip())
-            return '\n'.join(valores)
-
-        # concatenar Ord+Error+Obs=Obs
-        resultado['Obs'] = resultado.apply(concatenar_colunas_se_nao_vazio, axis=1)
-        resultado = resultado[final_cols]
-        # resultado = resultado.drop('Ord', axis=1)
-        # resultado = resultado.drop('Error', axis=1)
-        
-        return resultado
-        return df
 
     def excel_format_capa(self,title:str, ws: Worksheet):
         ws.delete_rows(1)
@@ -545,8 +633,7 @@ class DC_SUP:
         )
         fill_Y1 = PatternFill(start_color="FFCC00", end_color="FFCC00", fill_type="solid")
         fill_Y2 = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")
-        alinhamento = Alignment(wrap_text=True)
-        middle=Alignment(wrap_text=True, vertical='center')
+        alinhamento = Alignment(wrap_text=True, vertical='center')
 
         # 1. Definir largura das colunas A, B, C, D, E
         for coluna in larguras: 
@@ -575,12 +662,7 @@ class DC_SUP:
             # print(f'=============>A{row}({cont})={val}')
             if cont:
                 cellA.font = bold
-                # for col in ['A','B','C','D']:
-                    # cell=ws[f'{col}{row}']
                 for cell in ws[row]:
-                    # cell.fill = header_fill
-                    # cell.font = header_font
-                    # cell.alignment = center_alignment
                     if cont==1:
                         ...
                     elif cont==2:
@@ -591,7 +673,7 @@ class DC_SUP:
                     else:
                         cell.border = borda
                         cell.fill = fill_Y2
-                        cell.alignment=middle
+                        cell.alignment=alinhamento
             cells=f'{ini}{row}:E{row}'
             ws.merge_cells(cells)
             cont+=1
@@ -642,7 +724,6 @@ class DC_SUP:
         #     ws.row_dimensions[row[0].row].auto_size = True
         
         return ws
-
 
     def excel_fit_height_lines(self,ws: Worksheet):
         bold=InlineFont(b=True)
@@ -727,6 +808,7 @@ class DC_SUP:
         tab.tableStyleInfo = style
 
         ws.add_table(tab)
+        self.excel_worksheet_wrap_text(ws)
         self.excel_worksheet_auto_size(ws)
 
     def excel_worksheet_format(self,ws:Worksheet, df:pd.DataFrame):
@@ -752,14 +834,17 @@ class DC_SUP:
             cell.font = header_font
             cell.alignment = center_alignment
         
+        self.excel_worksheet_wrap_text(ws)
         self.excel_worksheet_auto_size(ws)
         
-    def excel_worksheet_auto_size(self,ws:Worksheet):
+    def excel_worksheet_wrap_text(self,ws:Worksheet):
         # formatr com wrap_text
-        alignment = Alignment(wrap_text=True)
+        alignment = Alignment(wrap_text=True, vertical='center')
         for row in ws.iter_rows():
             for cell in row:
                 cell.alignment = alignment
+    
+    def excel_worksheet_auto_size(self,ws:Worksheet):
         # Ajustar largura das colunas
         for column in ws.columns:
             max_length = 0
@@ -767,13 +852,11 @@ class DC_SUP:
             
             for cell in column:
                 try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
+                    max_length = max(max_length,len(str(cell.value)))
                 except:
                     pass
             
-            adjusted_width = min(max_length + 2, 20)  # Máximo de 20 caracteres
-            ws.column_dimensions[column_letter].width = adjusted_width
+            ws.column_dimensions[column_letter].width = min(max_length + 2, self.excel_max_width)
 
     def convert_to_excel(self,sheet:str,df:pd.DataFrame)->Worksheet|None:
         """
@@ -815,11 +898,15 @@ class DC_SUP:
         self.evel_item(text,'- ')
         self.level+=1
     def evel_item(self,text,c=''):
-        if self.verbose<2: return
-        print(f'{"":<{self.level*2}}{c}{text}')
+        if self.verbose<2 or self.level<0: return
+        if self.verbose==2:
+            print(f'{"":<{self.level*2}}{c}{text}')
+        else:
+            print(f'{"":<{self.level*2}}{c}[{self.level}]{text}')
     def level_close(self,text=None):
         self.level-=1
-        # self.evel_item(f'close {text}','= ')
+        if self.verbose>2:
+            self.evel_item(f'close {text}','= ')
         
 if __name__ == "__main__":
     DC_SUP()
