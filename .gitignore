@@ -7,7 +7,6 @@ __pycache__
 *.tar.gz
 .mypy_cache
 passwd.py
-/dc/data/
 /dc/schema/
-/dc/xlsx/
+/dc/sup/
 /dc/*.json
