@@ -250,12 +250,15 @@ class DC_SUP:
                         self.__level_open(f'Rota Summary: {rota_summary}')
                         for formato_summary, traducao_data in formato_summary_data.items():
                             self.__level_open(f'Formato Summary: {formato_summary}')
-                            for idSup_Cod_CNL_a_idTipoOrig, erro_ord_rotas in traducao_data.items():
-                                idSup,cod_cnl_a,idTipoOrig,idEncam=str(idSup_Cod_CNL_a_idTipoOrig).split(',')
+                            rotas:dict=traducao_data['detail']
+                            sup_encam:dict=traducao_data['sup_encam']
+                            
+                            for idSup_Cod_CNL_a_idTipoOrig_idEncam, erro_ord_encam in sup_encam.items():
+                                idSup,cod_cnl_a,idTipoOrig,idEncam=str(idSup_Cod_CNL_a_idTipoOrig_idEncam).split(',')
                                 tipoOrig_data:dict=self.dict['tipo_orig'][idTipoOrig]
                                 tipoOrig=tipoOrig_data['TipoOrig']
                                 self.__level_open(f'idSup: {idSup}, Cod_CNL_a: {cod_cnl_a}, TipoOrig: {idTipoOrig}-{tipoOrig}')
-                                error,ord_encam,rotas=erro_ord_rotas
+                                error,ord_encam=erro_ord_encam
 
                                 if ord_encam==0: 
                                     tipo_ord='Acesso'

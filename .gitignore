@@ -5,6 +5,7 @@ htmlcov
 __pycache__
 *.egg-info
 *.tar.gz
+*.7z
 .mypy_cache
 passwd.py
 /dc/schema/
